@@ -31,11 +31,14 @@ android {
       keyAlias = "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+    val localKeystore = file("${rootDir}/debug.keystore")
+    if (localKeystore.exists()) {
+      create("localDebug") {
+        storeFile = localKeystore
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
   }
 
@@ -45,13 +48,21 @@ android {
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      if (file(keystorePath).exists()) {
-        signingConfig = signingConfigs.getByName("release")
-      } else {
-        signingConfig = signingConfigs.getByName("debugConfig")
+      val hasLocalDebug = file("${rootDir}/debug.keystore").exists()
+      signingConfig = when {
+        file(keystorePath).exists() -> signingConfigs.getByName("release")
+        hasLocalDebug -> signingConfigs.getByName("localDebug")
+        else -> signingConfigs.getByName("debug")
       }
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      val hasLocalDebug = file("${rootDir}/debug.keystore").exists()
+      signingConfig = if (hasLocalDebug) {
+        signingConfigs.getByName("localDebug")
+      } else {
+        signingConfigs.getByName("debug")
+      }
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
