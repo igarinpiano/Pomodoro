@@ -9,7 +9,7 @@ enum class PomodoroPhase(val label: String) {
 enum class AppThemeMode(val label: String) {
     SYSTEM("システム"),
     LIGHT("ライト"),
-    DARK("ダーク (節電)")
+    DARK("ダーク")
 }
 
 data class PomodoroSettings(

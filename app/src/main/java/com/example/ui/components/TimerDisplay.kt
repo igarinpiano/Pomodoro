@@ -67,18 +67,19 @@ fun TimerCircleDisplay(
 
     Box(
         modifier = modifier
-            .size(350.dp)
+            .sizeIn(maxWidth = 310.dp, maxHeight = 310.dp)
+            .aspectRatio(1f)
             .testTag("timer_circle_container"),
         contentAlignment = Alignment.Center
     ) {
         // Outer Arc Canvas (clean single-color M3 gauge)
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = 12.dp.toPx()
+            val strokeWidth = 10.dp.toPx()
             val radius = (size.minDimension - strokeWidth) / 2
 
-            // Background track ring
+            // Background track ring (subtle)
             drawCircle(
-                color = trackColor,
+                color = trackColor.copy(alpha = 0.5f),
                 radius = radius,
                 style = Stroke(width = strokeWidth)
             )
@@ -93,44 +94,38 @@ fun TimerCircleDisplay(
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
             } else {
-                // Standby full thin indicator ring
+                // Standby thin indicator ring
                 drawCircle(
-                    color = strokeColor.copy(alpha = 0.4f),
+                    color = strokeColor.copy(alpha = 0.5f),
                     radius = radius,
                     style = Stroke(width = strokeWidth / 2)
                 )
             }
         }
 
-        // Inner Circle Container
-        Surface(
+        // Inner Timer Content (Directly inside without background decorative circle fill)
+        Box(
             modifier = Modifier
-                .fillMaxSize(0.91f)
-                .clip(CircleShape),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            tonalElevation = 2.dp
+                .fillMaxSize()
+                .padding(18.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isRunningOrPaused) {
-                    ActiveTimerView(
-                        timerState = timerState,
-                        onPause = onPause,
-                        onResume = onResume,
-                        onSkip = onSkip,
-                        onStop = onStop
-                    )
-                } else {
-                    SetupTimerView(
-                        timerState = timerState,
-                        onStart = onStart,
-                        onUpdateWorkMins = onUpdateWorkMins,
-                        onUpdateBreakMins = onUpdateBreakMins,
-                        onUpdateTotalSets = onUpdateTotalSets
-                    )
-                }
+            if (isRunningOrPaused) {
+                ActiveTimerView(
+                    timerState = timerState,
+                    onPause = onPause,
+                    onResume = onResume,
+                    onSkip = onSkip,
+                    onStop = onStop
+                )
+            } else {
+                SetupTimerView(
+                    timerState = timerState,
+                    onStart = onStart,
+                    onUpdateWorkMins = onUpdateWorkMins,
+                    onUpdateBreakMins = onUpdateBreakMins,
+                    onUpdateTotalSets = onUpdateTotalSets
+                )
             }
         }
     }
@@ -266,7 +261,7 @@ private fun SetupTimerView(
         // Top: Loop / Set Stepper
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "ループ (タップで直接入力)",
+                text = "ループ",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

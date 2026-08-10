@@ -39,6 +39,11 @@ class PomodoroService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action ?: return START_NOT_STICKY
 
+        // Call startForegroundCompat if service was started or is active
+        if (_timerState.value.isRunning || _timerState.value.isPaused || action == ACTION_START || action == ACTION_RESUME) {
+            startForegroundCompat()
+        }
+
         when (action) {
             ACTION_START -> startTimer()
             ACTION_PAUSE -> pauseTimer()
@@ -92,7 +97,7 @@ class PomodoroService : Service() {
             timeLeftSeconds = durationSecs
         )
 
-        startForeground(NOTIFICATION_ID, createNotification(_timerState.value))
+        startForegroundCompat()
         runTicker()
     }
 
@@ -110,7 +115,7 @@ class PomodoroService : Service() {
             isRunning = true,
             isPaused = false
         )
-        startForeground(NOTIFICATION_ID, createNotification(_timerState.value))
+        startForegroundCompat()
         runTicker()
     }
 
@@ -132,8 +137,34 @@ class PomodoroService : Service() {
             isPaused = false,
             settings = settings
         )
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (_: Exception) {}
         stopSelf()
+    }
+
+    private fun startForegroundCompat() {
+        val notification = createNotification(_timerState.value)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            try {
+                startForeground(NOTIFICATION_ID, notification)
+            } catch (_: Exception) {}
+        }
     }
 
     private fun updateSettings(newSettings: PomodoroSettings) {
@@ -251,7 +282,7 @@ class PomodoroService : Service() {
             this,
             0,
             Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -273,18 +304,34 @@ class PomodoroService : Service() {
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(contentIntent)
-            .setOngoing(state.isRunning)
+            .setOngoing(state.isRunning || state.isPaused)
             .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
         if (state.phase != PomodoroPhase.COMPLETED) {
+            // Live Progress Bar
+            val totalSecs = state.totalDurationSeconds.coerceAtLeast(1)
+            val elapsedSecs = (totalSecs - state.timeLeftSeconds).coerceAtLeast(0)
+            builder.setProgress(totalSecs, elapsedSecs, false)
+
             if (state.isRunning) {
+                // Live Countdown Chronometer for real-time tick in notification bar
+                val targetTimeMillis = System.currentTimeMillis() + (state.timeLeftSeconds * 1000L)
+                builder.setWhen(targetTimeMillis)
+                builder.setUsesChronometer(true)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    builder.setChronometerCountDown(true)
+                }
+
                 builder.addAction(
                     android.R.drawable.ic_media_pause,
                     "一時停止",
                     getPendingIntent(ACTION_PAUSE)
                 )
             } else if (state.isPaused) {
+                builder.setUsesChronometer(false)
                 builder.addAction(
                     android.R.drawable.ic_media_play,
                     "再開",
@@ -354,5 +401,23 @@ class PomodoroService : Service() {
 
         private val _timerState = MutableStateFlow(PomodoroTimerState())
         val timerState: StateFlow<PomodoroTimerState> = _timerState.asStateFlow()
+
+        fun updateSettingsDirectly(newSettings: PomodoroSettings) {
+            val current = _timerState.value
+            if (!current.isRunning && !current.isPaused) {
+                val workSecs = newSettings.workDurationMinutes * 60
+                _timerState.value = current.copy(
+                    totalSets = newSettings.totalSets,
+                    totalDurationSeconds = workSecs,
+                    timeLeftSeconds = workSecs,
+                    settings = newSettings
+                )
+            } else {
+                _timerState.value = current.copy(
+                    totalSets = newSettings.totalSets,
+                    settings = newSettings
+                )
+            }
+        }
     }
 }

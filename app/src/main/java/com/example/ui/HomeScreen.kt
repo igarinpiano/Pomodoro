@@ -52,22 +52,22 @@ fun HomeScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.statusBars,
         modifier = modifier
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .statusBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+                .padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header: Clean App Title without timestamp
+            // Header: Clean App Title
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
+                    .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -75,39 +75,46 @@ fun HomeScreen(
                     text = "ポモドーロタイマー",
                     style = MaterialTheme.typography.headlineMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 24.sp
+                        fontSize = 22.sp
                     ),
                     color = MaterialTheme.colorScheme.onBackground
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Main Pomodoro Display Circle (Screen 1 & 2 UI)
-            TimerCircleDisplay(
-                timerState = timerState,
-                onStart = {
-                    if (timerState.settings.flashEnabled && !hasCameraPermission) {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                    viewModel.startTimer(context)
-                },
-                onPause = { viewModel.pauseTimer(context) },
-                onResume = { viewModel.resumeTimer(context) },
-                onSkip = { viewModel.skipSet(context) },
-                onStop = { viewModel.stopTimer(context) },
-                onUpdateWorkMins = { viewModel.updateInlineSettings(context, workMins = it) },
-                onUpdateBreakMins = { viewModel.updateInlineSettings(context, breakMins = it) },
-                onUpdateTotalSets = { viewModel.updateInlineSettings(context, totalSets = it) }
-            )
+            // Main Pomodoro Display Circle (Perfect 1:1 Circle)
+            Box(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                TimerCircleDisplay(
+                    timerState = timerState,
+                    onStart = {
+                        if (timerState.settings.flashEnabled && !hasCameraPermission) {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                        viewModel.startTimer(context)
+                    },
+                    onPause = { viewModel.pauseTimer(context) },
+                    onResume = { viewModel.resumeTimer(context) },
+                    onSkip = { viewModel.skipSet(context) },
+                    onStop = { viewModel.stopTimer(context) },
+                    onUpdateWorkMins = { viewModel.updateInlineSettings(context, workMins = it) },
+                    onUpdateBreakMins = { viewModel.updateInlineSettings(context, breakMins = it) },
+                    onUpdateTotalSets = { viewModel.updateInlineSettings(context, totalSets = it) }
+                )
+            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Bottom Actions: Settings & Quick Sound Toggle
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp),
+                    .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {

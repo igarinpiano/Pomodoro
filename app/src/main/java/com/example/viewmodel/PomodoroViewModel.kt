@@ -36,17 +36,25 @@ class PomodoroViewModel : ViewModel() {
     }
 
     fun updateSettings(context: Context, newSettings: PomodoroSettings) {
-        val intent = Intent(context, PomodoroService::class.java).apply {
-            action = PomodoroService.ACTION_UPDATE_SETTINGS
-            putExtra(PomodoroService.EXTRA_WORK_MINS, newSettings.workDurationMinutes)
-            putExtra(PomodoroService.EXTRA_BREAK_MINS, newSettings.breakDurationMinutes)
-            putExtra(PomodoroService.EXTRA_TOTAL_SETS, newSettings.totalSets)
-            putExtra(PomodoroService.EXTRA_SOUND_ENABLED, newSettings.soundEnabled)
-            putExtra(PomodoroService.EXTRA_FLASH_ENABLED, newSettings.flashEnabled)
-            putExtra(PomodoroService.EXTRA_VIBRATE_ENABLED, newSettings.vibrateEnabled)
-            putExtra(PomodoroService.EXTRA_THEME_MODE, newSettings.themeMode.name)
+        if (!timerState.value.isRunning && !timerState.value.isPaused) {
+            PomodoroService.updateSettingsDirectly(newSettings)
+        } else {
+            val intent = Intent(context, PomodoroService::class.java).apply {
+                action = PomodoroService.ACTION_UPDATE_SETTINGS
+                putExtra(PomodoroService.EXTRA_WORK_MINS, newSettings.workDurationMinutes)
+                putExtra(PomodoroService.EXTRA_BREAK_MINS, newSettings.breakDurationMinutes)
+                putExtra(PomodoroService.EXTRA_TOTAL_SETS, newSettings.totalSets)
+                putExtra(PomodoroService.EXTRA_SOUND_ENABLED, newSettings.soundEnabled)
+                putExtra(PomodoroService.EXTRA_FLASH_ENABLED, newSettings.flashEnabled)
+                putExtra(PomodoroService.EXTRA_VIBRATE_ENABLED, newSettings.vibrateEnabled)
+                putExtra(PomodoroService.EXTRA_THEME_MODE, newSettings.themeMode.name)
+            }
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {
+                PomodoroService.updateSettingsDirectly(newSettings)
+            }
         }
-        startServiceInternal(context, intent)
     }
 
     fun updateInlineSettings(
