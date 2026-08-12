@@ -13,6 +13,10 @@ class PomodoroViewModel : ViewModel() {
 
     val timerState: StateFlow<PomodoroTimerState> = PomodoroService.timerState
 
+    fun initSettings(context: Context) {
+        PomodoroService.initSettingsIfNeeded(context)
+    }
+
     // --- Pomodoro Service Actions ---
 
     fun startTimer(context: Context) {
@@ -37,7 +41,7 @@ class PomodoroViewModel : ViewModel() {
 
     fun updateSettings(context: Context, newSettings: PomodoroSettings) {
         if (!timerState.value.isRunning && !timerState.value.isPaused) {
-            PomodoroService.updateSettingsDirectly(newSettings)
+            PomodoroService.updateSettingsDirectly(context, newSettings)
         } else {
             val intent = Intent(context, PomodoroService::class.java).apply {
                 action = PomodoroService.ACTION_UPDATE_SETTINGS
@@ -52,7 +56,7 @@ class PomodoroViewModel : ViewModel() {
             try {
                 context.startService(intent)
             } catch (_: Exception) {
-                PomodoroService.updateSettingsDirectly(newSettings)
+                PomodoroService.updateSettingsDirectly(context, newSettings)
             }
         }
     }

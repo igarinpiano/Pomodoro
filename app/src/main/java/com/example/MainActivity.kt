@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        viewModel.initSettings(applicationContext)
         
         setContent {
             val timerState by viewModel.timerState.collectAsStateWithLifecycle()

@@ -33,6 +33,7 @@ class PomodoroService : Service() {
         super.onCreate()
         soundManager = SoundManager(this)
         flashlightManager = FlashlightManager(this)
+        initSettingsIfNeeded(this)
         createNotificationChannel()
     }
 
@@ -168,6 +169,7 @@ class PomodoroService : Service() {
     }
 
     private fun updateSettings(newSettings: PomodoroSettings) {
+        com.example.util.PreferencesManager(this).saveSettings(newSettings)
         val current = _timerState.value
         if (!current.isRunning && !current.isPaused) {
             val workSecs = newSettings.workDurationMinutes * 60
@@ -401,8 +403,24 @@ class PomodoroService : Service() {
 
         private val _timerState = MutableStateFlow(PomodoroTimerState())
         val timerState: StateFlow<PomodoroTimerState> = _timerState.asStateFlow()
+        private var isSettingsInitialized = false
 
-        fun updateSettingsDirectly(newSettings: PomodoroSettings) {
+        fun initSettingsIfNeeded(context: Context) {
+            if (!isSettingsInitialized) {
+                isSettingsInitialized = true
+                val savedSettings = com.example.util.PreferencesManager(context).loadSettings()
+                val workSecs = savedSettings.workDurationMinutes * 60
+                _timerState.value = _timerState.value.copy(
+                    totalSets = savedSettings.totalSets,
+                    totalDurationSeconds = workSecs,
+                    timeLeftSeconds = workSecs,
+                    settings = savedSettings
+                )
+            }
+        }
+
+        fun updateSettingsDirectly(context: Context, newSettings: PomodoroSettings) {
+            com.example.util.PreferencesManager(context).saveSettings(newSettings)
             val current = _timerState.value
             if (!current.isRunning && !current.isPaused) {
                 val workSecs = newSettings.workDurationMinutes * 60

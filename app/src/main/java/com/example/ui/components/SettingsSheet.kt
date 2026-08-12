@@ -5,12 +5,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material.icons.filled.Vibration
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -75,7 +75,7 @@ fun SettingsSheet(
                                 val icon = when (mode) {
                                     AppThemeMode.SYSTEM -> Icons.Filled.SettingsSuggest
                                     AppThemeMode.LIGHT -> Icons.Filled.LightMode
-                                    AppThemeMode.DARK -> Icons.Filled.BatterySaver
+                                    AppThemeMode.DARK -> Icons.Filled.DarkMode
                                 }
                                 Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
                             },
@@ -97,7 +97,7 @@ fun SettingsSheet(
 
             // Sound Toggle
             SettingToggleRow(
-                icon = { Icon(Icons.Filled.VolumeUp, contentDescription = null) },
+                icon = { Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null) },
                 title = "サウンド効果音",
                 subtitle = "作業・休憩の完了時にアラート音を再生",
                 checked = soundEnabled,
