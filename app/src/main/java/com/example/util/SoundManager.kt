@@ -3,7 +3,7 @@ package com.example.util
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
-import android.media.RingtoneManager
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -14,26 +14,27 @@ class SoundManager(private val context: Context) {
 
     fun playAlertSound() {
         try {
-            val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            val resId = context.resources.getIdentifier("alert", "raw", context.packageName)
+            if (resId != 0) {
+                val mp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val attrs = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    MediaPlayer.create(context, resId, attrs, 0) ?: MediaPlayer.create(context, resId)
+                } else {
+                    MediaPlayer.create(context, resId)
+                }
 
-            if (notificationUri != null) {
-                val ringtone = RingtoneManager.getRingtone(context, notificationUri)
-                if (ringtone != null) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        ringtone.audioAttributes = AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build()
-                    } else {
-                        @Suppress("DEPRECATION")
-                        ringtone.streamType = AudioManager.STREAM_NOTIFICATION
+                mp?.apply {
+                    setOnCompletionListener { player ->
+                        try { player.release() } catch (_: Exception) {}
                     }
-                    ringtone.play()
+                    start()
                 }
             }
         } catch (e: Exception) {
-            Log.e("SoundManager", "Failed to play notification sound", e)
+            Log.e("SoundManager", "Failed to play audio resource", e)
         }
     }
 
