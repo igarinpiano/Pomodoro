@@ -4,67 +4,36 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.RingtoneManager
-import android.media.ToneGenerator
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 class SoundManager(private val context: Context) {
 
     fun playAlertSound() {
-        CoroutineScope(Dispatchers.IO).launch {
-            var playedSuccessfully = false
-            try {
-                val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        try {
+            val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+
+            if (notificationUri != null) {
                 val ringtone = RingtoneManager.getRingtone(context, notificationUri)
                 if (ringtone != null) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         ringtone.audioAttributes = AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                             .build()
+                    } else {
+                        @Suppress("DEPRECATION")
+                        ringtone.streamType = AudioManager.STREAM_NOTIFICATION
                     }
                     ringtone.play()
-                    playedSuccessfully = true
                 }
-            } catch (e: Exception) {
-                Log.e("SoundManager", "Failed to play default ringtone", e)
             }
-
-            // Fallback / chime beep sequence to guarantee sound on all devices
-            if (!playedSuccessfully) {
-                playChimeBeepSequence()
-            } else {
-                delay(200)
-                playChimeBeepSequence()
-            }
-        }
-    }
-
-    private fun playChimeBeepSequence() {
-        try {
-            val toneGen = ToneGenerator(AudioManager.STREAM_ALARM, 100)
-            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 250)
-            Thread.sleep(280)
-            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 350)
-            Thread.sleep(380)
-            toneGen.release()
         } catch (e: Exception) {
-            try {
-                val fallbackTone = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
-                fallbackTone.startTone(ToneGenerator.TONE_PROP_BEEP, 400)
-                Thread.sleep(450)
-                fallbackTone.release()
-            } catch (ex: Exception) {
-                Log.e("SoundManager", "ToneGenerator error", ex)
-            }
+            Log.e("SoundManager", "Failed to play notification sound", e)
         }
     }
 
