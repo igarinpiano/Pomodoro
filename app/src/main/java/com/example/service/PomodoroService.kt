@@ -379,6 +379,7 @@ class PomodoroService : Service() {
     override fun onDestroy() {
         timerJob?.cancel()
         serviceScope.cancel()
+        soundManager.release()
         super.onDestroy()
     }
 
