@@ -17,9 +17,9 @@ data class PomodoroSettings(
     val breakDurationMinutes: Int = 5,
     val totalSets: Int = 4,
     val soundEnabled: Boolean = true,
-    val flashEnabled: Boolean = true,
+    val flashEnabled: Boolean = false,
     val vibrateEnabled: Boolean = true,
-    val themeMode: AppThemeMode = AppThemeMode.DARK
+    val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
 )
 
 data class PomodoroTimerState(
@@ -48,6 +48,6 @@ data class PomodoroTimerState(
         get() {
             val minutes = timeLeftSeconds / 60
             val seconds = timeLeftSeconds % 60
-            return String.format("%02d:%02d", minutes, seconds)
+            return String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)
         }
 }
