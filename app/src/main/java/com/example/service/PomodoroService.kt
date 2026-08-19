@@ -469,10 +469,10 @@ class PomodoroService : Service() {
             PomodoroPhase.COMPLETED -> "🎉 全セット完了！お疲れ様でした！"
         }
 
-        val text = if (state.phase == PomodoroPhase.COMPLETED) {
-            "すべてのセットを達成しました"
-        } else {
-            "残り時間: ${state.formattedTime}"
+        val text = when {
+            state.phase == PomodoroPhase.COMPLETED -> "すべてのセットを達成しました"
+            state.isPaused -> "残り時間: ${state.formattedTime} (一時停止中)"
+            else -> "残り時間: ${state.formattedTime}"
         }
 
         val builder = NotificationCompat.Builder(this, CHANNEL_LIVE_ID)
@@ -481,6 +481,7 @@ class PomodoroService : Service() {
             .setContentText(text)
             .setContentIntent(contentIntent)
             .setOngoing(state.isRunning || state.isPaused)
+            .setShowWhen(false)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -493,19 +494,12 @@ class PomodoroService : Service() {
             builder.setProgress(totalSecs, elapsedSecs, false)
 
             if (state.isRunning) {
-                // Live Countdown Chronometer
-                val targetTimeMillis = System.currentTimeMillis() + (state.timeLeftSeconds * 1000L)
-                builder.setWhen(targetTimeMillis)
-                builder.setUsesChronometer(true)
-                builder.setChronometerCountDown(true)
-
                 builder.addAction(
                     android.R.drawable.ic_media_pause,
                     "一時停止",
                     getPendingIntent(ACTION_PAUSE)
                 )
             } else if (state.isPaused) {
-                builder.setUsesChronometer(false)
                 builder.addAction(
                     android.R.drawable.ic_media_play,
                     "再開",
