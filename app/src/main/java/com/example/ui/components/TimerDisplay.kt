@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
@@ -81,16 +83,22 @@ fun TimerCircleDisplay(
             .testTag("timer_circle_container"),
         contentAlignment = Alignment.Center
     ) {
-        // Outer Arc Canvas (clean single-color M3 gauge)
+        // Outer Arc Canvas (clean single-color M3 gauge) - all rings share same center/radius
         Canvas(modifier = Modifier.fillMaxSize()) {
             val strokeWidth = 10.dp.toPx()
-            val radius = (size.minDimension - strokeWidth) / 2
+            val diameter = size.minDimension - strokeWidth
+            val radius = diameter / 2f
+            val topLeft = Offset(
+                x = (size.width - diameter) / 2f,
+                y = (size.height - diameter) / 2f
+            )
+            val arcSize = Size(diameter, diameter)
 
-            // Background track ring (subtle)
+            // Background track ring (subtle) - base for all states
             drawCircle(
                 color = trackColor.copy(alpha = 0.5f),
                 radius = radius,
-                style = Stroke(width = strokeWidth)
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
 
             if (isCompleted) {
@@ -98,7 +106,7 @@ fun TimerCircleDisplay(
                 drawCircle(
                     color = strokeColor,
                     radius = radius,
-                    style = Stroke(width = strokeWidth)
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
             } else if (isRunningOrPaused) {
                 val sweepAngle = 360f * animatedProgress
@@ -107,14 +115,16 @@ fun TimerCircleDisplay(
                     startAngle = -90f,
                     sweepAngle = sweepAngle,
                     useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
             } else {
-                // Standby thin indicator ring
+                // Standby indicator ring - keep thin design but same centerline as track/progress
                 drawCircle(
                     color = strokeColor.copy(alpha = 0.5f),
                     radius = radius,
-                    style = Stroke(width = strokeWidth / 2)
+                    style = Stroke(width = strokeWidth / 2f, cap = StrokeCap.Round)
                 )
             }
         }
