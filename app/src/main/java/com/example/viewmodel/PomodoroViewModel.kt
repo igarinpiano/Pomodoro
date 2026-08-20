@@ -84,6 +84,18 @@ class PomodoroViewModel : ViewModel() {
         updateSettings(context, updated)
     }
 
+    fun toggleQuickVibrate(context: Context) {
+        val current = timerState.value.settings
+        val updated = current.copy(vibrateEnabled = !current.vibrateEnabled)
+        updateSettings(context, updated)
+    }
+
+    fun toggleQuickFlash(context: Context) {
+        val current = timerState.value.settings
+        val updated = current.copy(flashEnabled = !current.flashEnabled)
+        updateSettings(context, updated)
+    }
+
     private fun sendServiceAction(context: Context, action: String) {
         val intent = Intent(context, PomodoroService::class.java).apply {
             this.action = action

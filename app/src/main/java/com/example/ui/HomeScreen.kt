@@ -8,9 +8,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.MusicOff
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -123,7 +126,7 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Bottom Actions: Settings & Quick Sound Toggle
+            // Bottom Actions: Settings & Quick Notification Toggles (horizontal 3)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -149,35 +152,93 @@ fun HomeScreen(
                     )
                 }
 
-                // Bottom Right: Quick Sound Toggle Button
-                IconButton(
-                    onClick = { viewModel.toggleQuickSound(context) },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            color = if (timerState.settings.soundEnabled) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHigh
-                            },
-                            shape = CircleShape
-                        )
-                        .testTag("footer_sound_button")
+                // Bottom Right: Horizontal 3 Notification Toggles (Sound / Vibrate / Light)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = if (timerState.settings.soundEnabled) Icons.Filled.MusicNote else Icons.Filled.MusicOff,
-                        contentDescription = "サウンド切り替え",
-                        tint = if (timerState.settings.soundEnabled) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
+                    // 1. Sound (Speaker icon) - left
+                    IconButton(
+                        onClick = { viewModel.toggleQuickSound(context) },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                color = if (timerState.settings.soundEnabled) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                },
+                                shape = CircleShape
+                            )
+                            .testTag("footer_sound_button")
+                    ) {
+                        Icon(
+                            imageVector = if (timerState.settings.soundEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                            contentDescription = "サウンド切り替え",
+                            tint = if (timerState.settings.soundEnabled) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+
+                    // 2. Vibrate - center
+                    IconButton(
+                        onClick = { viewModel.toggleQuickVibrate(context) },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                color = if (timerState.settings.vibrateEnabled) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                },
+                                shape = CircleShape
+                            )
+                            .testTag("footer_vibrate_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Vibration,
+                            contentDescription = "バイブ切り替え",
+                            tint = if (timerState.settings.vibrateEnabled) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+
+                    // 3. Light (Flash) - right
+                    IconButton(
+                        onClick = { viewModel.toggleQuickFlash(context) },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                color = if (timerState.settings.flashEnabled) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                },
+                                shape = CircleShape
+                            )
+                            .testTag("footer_flash_button")
+                    ) {
+                        Icon(
+                            imageVector = if (timerState.settings.flashEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
+                            contentDescription = "ライト切り替え",
+                            tint = if (timerState.settings.flashEnabled) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
                 }
             }
         }
 
-        // Settings Modal Sheet (Themes & Notification Alerts)
+        // Settings Modal Sheet (Themes & Auto Start only - notifications separated to footer)
         if (showSettingsSheet) {
             SettingsSheet(
                 settings = timerState.settings,

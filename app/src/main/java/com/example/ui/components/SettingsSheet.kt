@@ -5,14 +5,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SettingsSuggest
-import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,9 +27,6 @@ fun SettingsSheet(
     onSaveSettings: (PomodoroSettings) -> Unit,
     onDismissRequest: () -> Unit
 ) {
-    var soundEnabled by remember { mutableStateOf(settings.soundEnabled) }
-    var flashEnabled by remember { mutableStateOf(settings.flashEnabled) }
-    var vibrateEnabled by remember { mutableStateOf(settings.vibrateEnabled) }
     var autoStartBreak by remember { mutableStateOf(settings.autoStartBreak) }
     var autoStartWork by remember { mutableStateOf(settings.autoStartWork) }
     var themeMode by remember { mutableStateOf(settings.themeMode) }
@@ -110,50 +104,12 @@ fun SettingsSheet(
             )
 
             SettingToggleRow(
-                icon = { Icon(Icons.Filled.PlayCircle, contentDescription = null) },
+                icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
                 title = "作業の自動開始",
                 subtitle = "休憩完了時に自動で次の作業カウントを開始",
                 checked = autoStartWork,
                 onCheckedChange = { autoStartWork = it },
                 testTag = "auto_start_work_toggle"
-            )
-
-            HorizontalDivider()
-
-            Text(
-                text = "完了アラート通知",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            // Sound Toggle
-            SettingToggleRow(
-                icon = { Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null) },
-                title = "サウンド効果音",
-                subtitle = "作業・休憩の完了時にアラート音を再生",
-                checked = soundEnabled,
-                onCheckedChange = { soundEnabled = it },
-                testTag = "sound_toggle"
-            )
-
-            // Flashlight Toggle
-            SettingToggleRow(
-                icon = { Icon(Icons.Filled.FlashOn, contentDescription = null) },
-                title = "フラッシュライト点滅",
-                subtitle = "完了時にカメラLEDフラッシュを点滅通知",
-                checked = flashEnabled,
-                onCheckedChange = { flashEnabled = it },
-                testTag = "flash_toggle"
-            )
-
-            // Vibration Toggle
-            SettingToggleRow(
-                icon = { Icon(Icons.Filled.Vibration, contentDescription = null) },
-                title = "バイブレーション",
-                subtitle = "完了時に端末バイブを振動通知",
-                checked = vibrateEnabled,
-                onCheckedChange = { vibrateEnabled = it },
-                testTag = "vibrate_toggle"
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -163,9 +119,6 @@ fun SettingsSheet(
                 onClick = {
                     onSaveSettings(
                         settings.copy(
-                            soundEnabled = soundEnabled,
-                            flashEnabled = flashEnabled,
-                            vibrateEnabled = vibrateEnabled,
                             autoStartBreak = autoStartBreak,
                             autoStartWork = autoStartWork,
                             themeMode = themeMode
