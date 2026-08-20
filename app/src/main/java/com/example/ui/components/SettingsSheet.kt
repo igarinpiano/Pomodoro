@@ -6,9 +6,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.*
@@ -31,6 +33,8 @@ fun SettingsSheet(
     var soundEnabled by remember { mutableStateOf(settings.soundEnabled) }
     var flashEnabled by remember { mutableStateOf(settings.flashEnabled) }
     var vibrateEnabled by remember { mutableStateOf(settings.vibrateEnabled) }
+    var autoStartBreak by remember { mutableStateOf(settings.autoStartBreak) }
+    var autoStartWork by remember { mutableStateOf(settings.autoStartWork) }
     var themeMode by remember { mutableStateOf(settings.themeMode) }
 
     ModalBottomSheet(
@@ -89,6 +93,33 @@ fun SettingsSheet(
 
             HorizontalDivider()
 
+            // Auto Start Settings Section
+            Text(
+                text = "タイマーの自動開始",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            SettingToggleRow(
+                icon = { Icon(Icons.Filled.Coffee, contentDescription = null) },
+                title = "休憩の自動開始",
+                subtitle = "作業完了時に自動で休憩カウントを開始",
+                checked = autoStartBreak,
+                onCheckedChange = { autoStartBreak = it },
+                testTag = "auto_start_break_toggle"
+            )
+
+            SettingToggleRow(
+                icon = { Icon(Icons.Filled.PlayCircle, contentDescription = null) },
+                title = "作業の自動開始",
+                subtitle = "休憩完了時に自動で次の作業カウントを開始",
+                checked = autoStartWork,
+                onCheckedChange = { autoStartWork = it },
+                testTag = "auto_start_work_toggle"
+            )
+
+            HorizontalDivider()
+
             Text(
                 text = "完了アラート通知",
                 style = MaterialTheme.typography.titleMedium,
@@ -135,6 +166,8 @@ fun SettingsSheet(
                             soundEnabled = soundEnabled,
                             flashEnabled = flashEnabled,
                             vibrateEnabled = vibrateEnabled,
+                            autoStartBreak = autoStartBreak,
+                            autoStartWork = autoStartWork,
                             themeMode = themeMode
                         )
                     )

@@ -36,6 +36,8 @@ class ExampleRobolectricTest {
       soundEnabled = false,
       flashEnabled = true,
       vibrateEnabled = false,
+      autoStartBreak = false,
+      autoStartWork = true,
       themeMode = AppThemeMode.DARK
     )
 
@@ -48,6 +50,8 @@ class ExampleRobolectricTest {
     assertFalse(loaded.soundEnabled)
     assertTrue(loaded.flashEnabled)
     assertFalse(loaded.vibrateEnabled)
+    assertFalse(loaded.autoStartBreak)
+    assertTrue(loaded.autoStartWork)
     assertEquals(AppThemeMode.DARK, loaded.themeMode)
   }
 }

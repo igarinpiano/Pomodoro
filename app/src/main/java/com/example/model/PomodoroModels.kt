@@ -19,6 +19,8 @@ data class PomodoroSettings(
     val soundEnabled: Boolean = true,
     val flashEnabled: Boolean = false,
     val vibrateEnabled: Boolean = true,
+    val autoStartBreak: Boolean = true,
+    val autoStartWork: Boolean = true,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
 )
 

@@ -17,6 +17,8 @@ class PreferencesManager(context: Context) {
             putBoolean(KEY_SOUND_ENABLED, settings.soundEnabled)
             putBoolean(KEY_FLASH_ENABLED, settings.flashEnabled)
             putBoolean(KEY_VIBRATE_ENABLED, settings.vibrateEnabled)
+            putBoolean(KEY_AUTO_START_BREAK, settings.autoStartBreak)
+            putBoolean(KEY_AUTO_START_WORK, settings.autoStartWork)
             putString(KEY_THEME_MODE, settings.themeMode.name)
             apply()
         }
@@ -29,6 +31,8 @@ class PreferencesManager(context: Context) {
         val soundEnabled = prefs.getBoolean(KEY_SOUND_ENABLED, true)
         val flashEnabled = prefs.getBoolean(KEY_FLASH_ENABLED, false)
         val vibrateEnabled = prefs.getBoolean(KEY_VIBRATE_ENABLED, true)
+        val autoStartBreak = prefs.getBoolean(KEY_AUTO_START_BREAK, true)
+        val autoStartWork = prefs.getBoolean(KEY_AUTO_START_WORK, true)
         val themeModeStr = prefs.getString(KEY_THEME_MODE, AppThemeMode.SYSTEM.name)
         val themeMode = try {
             AppThemeMode.valueOf(themeModeStr ?: AppThemeMode.SYSTEM.name)
@@ -43,6 +47,8 @@ class PreferencesManager(context: Context) {
             soundEnabled = soundEnabled,
             flashEnabled = flashEnabled,
             vibrateEnabled = vibrateEnabled,
+            autoStartBreak = autoStartBreak,
+            autoStartWork = autoStartWork,
             themeMode = themeMode
         )
     }
@@ -54,6 +60,8 @@ class PreferencesManager(context: Context) {
         private const val KEY_SOUND_ENABLED = "sound_enabled"
         private const val KEY_FLASH_ENABLED = "flash_enabled"
         private const val KEY_VIBRATE_ENABLED = "vibrate_enabled"
+        private const val KEY_AUTO_START_BREAK = "auto_start_break"
+        private const val KEY_AUTO_START_WORK = "auto_start_work"
         private const val KEY_THEME_MODE = "theme_mode"
     }
 }

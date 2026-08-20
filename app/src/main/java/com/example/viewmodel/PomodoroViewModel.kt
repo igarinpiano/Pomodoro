@@ -51,6 +51,8 @@ class PomodoroViewModel : ViewModel() {
                 putExtra(PomodoroService.EXTRA_SOUND_ENABLED, newSettings.soundEnabled)
                 putExtra(PomodoroService.EXTRA_FLASH_ENABLED, newSettings.flashEnabled)
                 putExtra(PomodoroService.EXTRA_VIBRATE_ENABLED, newSettings.vibrateEnabled)
+                putExtra(PomodoroService.EXTRA_AUTO_START_BREAK, newSettings.autoStartBreak)
+                putExtra(PomodoroService.EXTRA_AUTO_START_WORK, newSettings.autoStartWork)
                 putExtra(PomodoroService.EXTRA_THEME_MODE, newSettings.themeMode.name)
             }
             try {

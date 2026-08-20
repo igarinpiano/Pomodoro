@@ -22,17 +22,25 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.PomodoroPhase
 import com.example.model.PomodoroTimerState
+
+const val MAX_WORK_MINUTES = 120
+const val MAX_BREAK_MINUTES = 60
+const val MAX_TOTAL_SETS = 12
 
 private enum class EditDialogType { NONE, SETS, WORK, BREAK }
 
@@ -50,6 +58,7 @@ fun TimerCircleDisplay(
     modifier: Modifier = Modifier
 ) {
     val isRunningOrPaused = timerState.isRunning || timerState.isPaused
+    val isCompleted = timerState.phase == PomodoroPhase.COMPLETED
 
     // Material 3 Color Role (Strictly aligns with user's Material You theme)
     val strokeColor = when (timerState.phase) {
@@ -84,7 +93,14 @@ fun TimerCircleDisplay(
                 style = Stroke(width = strokeWidth)
             )
 
-            if (isRunningOrPaused) {
+            if (isCompleted) {
+                // Completed full ring
+                drawCircle(
+                    color = strokeColor,
+                    radius = radius,
+                    style = Stroke(width = strokeWidth)
+                )
+            } else if (isRunningOrPaused) {
                 val sweepAngle = 360f * animatedProgress
                 drawArc(
                     color = strokeColor,
@@ -110,22 +126,31 @@ fun TimerCircleDisplay(
                 .padding(18.dp),
             contentAlignment = Alignment.Center
         ) {
-            if (isRunningOrPaused) {
-                ActiveTimerView(
-                    timerState = timerState,
-                    onPause = onPause,
-                    onResume = onResume,
-                    onSkip = onSkip,
-                    onStop = onStop
-                )
-            } else {
-                SetupTimerView(
-                    timerState = timerState,
-                    onStart = onStart,
-                    onUpdateWorkMins = onUpdateWorkMins,
-                    onUpdateBreakMins = onUpdateBreakMins,
-                    onUpdateTotalSets = onUpdateTotalSets
-                )
+            when {
+                isCompleted -> {
+                    CompletedTimerView(
+                        totalSets = timerState.totalSets,
+                        onNext = onStop
+                    )
+                }
+                isRunningOrPaused -> {
+                    ActiveTimerView(
+                        timerState = timerState,
+                        onPause = onPause,
+                        onResume = onResume,
+                        onSkip = onSkip,
+                        onStop = onStop
+                    )
+                }
+                else -> {
+                    SetupTimerView(
+                        timerState = timerState,
+                        onStart = onStart,
+                        onUpdateWorkMins = onUpdateWorkMins,
+                        onUpdateBreakMins = onUpdateBreakMins,
+                        onUpdateTotalSets = onUpdateTotalSets
+                    )
+                }
             }
         }
     }
@@ -241,6 +266,52 @@ private fun ActiveTimerView(
 }
 
 @Composable
+private fun CompletedTimerView(
+    totalSets: Int,
+    onNext: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceEvenly
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = "🎉",
+                fontSize = 40.sp
+            )
+            Text(
+                text = "全セット達成！",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.testTag("completed_title_text")
+            )
+            Text(
+                text = "全${totalSets}セット お疲れ様でした！",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("completed_subtitle_text")
+            )
+        }
+
+        Button(
+            onClick = onNext,
+            modifier = Modifier
+                .fillMaxWidth(0.6f)
+                .height(44.dp)
+                .testTag("completed_next_button")
+        ) {
+            Text("次へ", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
 private fun SetupTimerView(
     timerState: PomodoroTimerState,
     onStart: () -> Unit,
@@ -301,7 +372,7 @@ private fun SetupTimerView(
                 }
 
                 IconButton(
-                    onClick = { if (settings.totalSets < 12) onUpdateTotalSets(settings.totalSets + 1) },
+                    onClick = { if (settings.totalSets < MAX_TOTAL_SETS) onUpdateTotalSets(settings.totalSets + 1) },
                     modifier = Modifier
                         .size(36.dp)
                         .testTag("setup_total_sets_plus")
@@ -326,7 +397,7 @@ private fun SetupTimerView(
                 valueMins = settings.workDurationMinutes,
                 onValueChange = onUpdateWorkMins,
                 onValueClick = { activeDialog = EditDialogType.WORK },
-                maxMins = 90,
+                maxMins = MAX_WORK_MINUTES,
                 testTag = "work_mins_circle"
             )
 
@@ -335,7 +406,7 @@ private fun SetupTimerView(
                 valueMins = settings.breakDurationMinutes,
                 onValueChange = onUpdateBreakMins,
                 onValueClick = { activeDialog = EditDialogType.BREAK },
-                maxMins = 30,
+                maxMins = MAX_BREAK_MINUTES,
                 testTag = "break_mins_circle"
             )
         }
@@ -367,7 +438,7 @@ private fun SetupTimerView(
                 title = "ループ数",
                 initialValue = settings.totalSets,
                 minValue = 1,
-                maxValue = 12,
+                maxValue = MAX_TOTAL_SETS,
                 unit = "回",
                 onConfirm = onUpdateTotalSets,
                 onDismiss = { activeDialog = EditDialogType.NONE }
@@ -378,7 +449,7 @@ private fun SetupTimerView(
                 title = "作業時間",
                 initialValue = settings.workDurationMinutes,
                 minValue = 1,
-                maxValue = 120,
+                maxValue = MAX_WORK_MINUTES,
                 unit = "分",
                 onConfirm = onUpdateWorkMins,
                 onDismiss = { activeDialog = EditDialogType.NONE }
@@ -389,7 +460,7 @@ private fun SetupTimerView(
                 title = "休憩時間",
                 initialValue = settings.breakDurationMinutes,
                 minValue = 1,
-                maxValue = 60,
+                maxValue = MAX_BREAK_MINUTES,
                 unit = "分",
                 onConfirm = onUpdateBreakMins,
                 onDismiss = { activeDialog = EditDialogType.NONE }
@@ -490,8 +561,21 @@ private fun NumberInputDialog(
     onConfirm: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var textValue by remember { mutableStateOf(initialValue.toString()) }
+    val initialStr = initialValue.toString()
+    var textFieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = initialStr,
+                selection = TextRange(0, initialStr.length)
+            )
+        )
+    }
+    val focusRequester = remember { FocusRequester() }
     var isError by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -499,10 +583,10 @@ private fun NumberInputDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = textValue,
+                    value = textFieldValue,
                     onValueChange = { input ->
-                        val digits = input.filter { it.isDigit() }
-                        textValue = digits
+                        val digits = input.text.filter { it.isDigit() }
+                        textFieldValue = input.copy(text = digits)
                         val num = digits.toIntOrNull()
                         isError = num == null || num !in minValue..maxValue
                     },
@@ -512,7 +596,7 @@ private fun NumberInputDialog(
                     ),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            val num = textValue.toIntOrNull()
+                            val num = textFieldValue.text.toIntOrNull()
                             if (num != null && num in minValue..maxValue) {
                                 onConfirm(num)
                                 onDismiss()
@@ -529,20 +613,22 @@ private fun NumberInputDialog(
                         }
                     },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
                 )
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    val num = textValue.toIntOrNull()
+                    val num = textFieldValue.text.toIntOrNull()
                     if (num != null && num in minValue..maxValue) {
                         onConfirm(num)
                         onDismiss()
                     }
                 },
-                enabled = !isError && textValue.isNotEmpty()
+                enabled = !isError && textFieldValue.text.isNotEmpty()
             ) {
                 Text("確定")
             }

@@ -53,5 +53,31 @@ class ExampleUnitTest {
         assertTrue(settings.soundEnabled)
         assertFalse(settings.flashEnabled)
         assertTrue(settings.vibrateEnabled)
+        assertTrue(settings.autoStartBreak)
+        assertTrue(settings.autoStartWork)
+    }
+
+    @Test
+    fun testCompletedPhaseState() {
+        val completedState = PomodoroTimerState(
+            phase = PomodoroPhase.COMPLETED,
+            currentSet = 4,
+            totalSets = 4,
+            timeLeftSeconds = 0,
+            isRunning = false,
+            isPaused = false
+        )
+        assertEquals(PomodoroPhase.COMPLETED, completedState.phase)
+        assertEquals("00:00", completedState.formattedTime)
+        assertEquals(1f, completedState.progress, 0.001f)
+        assertFalse(completedState.isRunning)
+        assertFalse(completedState.isPaused)
+    }
+
+    @Test
+    fun testPhaseLabels() {
+        assertEquals("作業中", PomodoroPhase.WORK.label)
+        assertEquals("休憩中", PomodoroPhase.BREAK.label)
+        assertEquals("全セット完了", PomodoroPhase.COMPLETED.label)
     }
 }
