@@ -21,6 +21,8 @@ data class PomodoroSettings(
     val vibrateEnabled: Boolean = true,
     val autoStartBreak: Boolean = true,
     val autoStartWork: Boolean = true,
+    val continueWorkUntilManual: Boolean = false,
+    val continueBreakUntilManual: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
 )
 
@@ -30,6 +32,7 @@ data class PomodoroTimerState(
     val totalSets: Int = 4,
     val totalDurationSeconds: Int = 25 * 60,
     val timeLeftSeconds: Int = 25 * 60,
+    val overtimeSeconds: Int = 0,
     val isRunning: Boolean = false,
     val isPaused: Boolean = false,
     val settings: PomodoroSettings = PomodoroSettings()
@@ -38,6 +41,7 @@ data class PomodoroTimerState(
     val progress: Float
         get() {
             if (totalDurationSeconds <= 0) return 0f
+            if (overtimeSeconds > 0) return 1f
             val elapsed = (totalDurationSeconds - timeLeftSeconds).coerceAtLeast(0)
             return when (phase) {
                 PomodoroPhase.WORK -> (elapsed.toFloat() / totalDurationSeconds.toFloat()).coerceIn(0f, 1f)
@@ -48,8 +52,21 @@ data class PomodoroTimerState(
 
     val formattedTime: String
         get() {
+            if (overtimeSeconds > 0) {
+                val totalElapsed = totalDurationSeconds + overtimeSeconds
+                val minutes = totalElapsed / 60
+                val seconds = totalElapsed % 60
+                return String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)
+            }
             val minutes = timeLeftSeconds / 60
             val seconds = timeLeftSeconds % 60
             return String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)
+        }
+
+    val formattedOvertime: String
+        get() {
+            val minutes = overtimeSeconds / 60
+            val seconds = overtimeSeconds % 60
+            return String.format(java.util.Locale.US, "+%02d:%02d", minutes, seconds)
         }
 }

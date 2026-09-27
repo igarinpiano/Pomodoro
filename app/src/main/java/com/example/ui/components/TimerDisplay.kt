@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.PomodoroPhase
 import com.example.model.PomodoroTimerState
+import com.example.model.StopwatchState
 
 const val MAX_WORK_MINUTES = 120
 const val MAX_BREAK_MINUTES = 60
@@ -54,6 +55,7 @@ fun TimerCircleDisplay(
     onResume: () -> Unit,
     onSkip: () -> Unit,
     onStop: () -> Unit,
+    onNextPhase: () -> Unit = onSkip,
     onUpdateWorkMins: (Int) -> Unit,
     onUpdateBreakMins: (Int) -> Unit,
     onUpdateTotalSets: (Int) -> Unit,
@@ -110,8 +112,10 @@ fun TimerCircleDisplay(
                 )
             } else if (isRunningOrPaused) {
                 val sweepAngle = 360f * animatedProgress
+                // Calm, stable color change when paused (no blinking)
+                val arcColor = if (timerState.isPaused) strokeColor.copy(alpha = 0.38f) else strokeColor
                 drawArc(
-                    color = strokeColor,
+                    color = arcColor,
                     startAngle = -90f,
                     sweepAngle = sweepAngle,
                     useCenter = false,
@@ -149,7 +153,8 @@ fun TimerCircleDisplay(
                         onPause = onPause,
                         onResume = onResume,
                         onSkip = onSkip,
-                        onStop = onStop
+                        onStop = onStop,
+                        onNextPhase = onNextPhase
                     )
                 }
                 else -> {
@@ -172,8 +177,11 @@ private fun ActiveTimerView(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onSkip: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onNextPhase: () -> Unit = onSkip
 ) {
+    val isOvertime = timerState.overtimeSeconds > 0
+
     Column(
         modifier = Modifier.padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -190,86 +198,229 @@ private fun ActiveTimerView(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag("active_set_text")
             )
-            Text(
-                text = timerState.phase.label,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = when (timerState.phase) {
-                    PomodoroPhase.WORK -> MaterialTheme.colorScheme.primary
-                    PomodoroPhase.BREAK -> MaterialTheme.colorScheme.tertiary
-                    PomodoroPhase.COMPLETED -> MaterialTheme.colorScheme.secondary
-                },
-                modifier = Modifier.testTag("active_phase_text")
-            )
+
+            // Fixed-height (34dp) status badge container: zero layout jump or size change on pause
+            Box(
+                modifier = Modifier.height(34.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isOvertime) {
+                    Surface(
+                        shape = RoundedCornerShape(17.dp),
+                        color = if (timerState.isPaused) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .height(34.dp)
+                            .testTag("active_overtime_badge")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        ) {
+                            if (timerState.isPaused) {
+                                Icon(
+                                    imageVector = Icons.Filled.Pause,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            } else {
+                                val dotColor = if (timerState.phase == PomodoroPhase.BREAK) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(dotColor, CircleShape)
+                                )
+                            }
+                            val activeLabel = if (timerState.phase == PomodoroPhase.BREAK) "休憩継続中" else "作業継続中"
+                            val textColor = when {
+                                timerState.isPaused -> MaterialTheme.colorScheme.onSecondaryContainer
+                                timerState.phase == PomodoroPhase.BREAK -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.primary
+                            }
+                            Text(
+                                text = if (timerState.isPaused) "一時停止中" else activeLabel,
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                color = textColor
+                            )
+                        }
+                    }
+                } else if (timerState.isPaused) {
+                    // Paused state: distinct calm color change in exact same pill dimensions
+                    Surface(
+                        shape = RoundedCornerShape(17.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier
+                            .height(34.dp)
+                            .testTag("active_paused_badge")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Pause,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "一時停止中",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                } else {
+                    // Running state: subtle surface container in exact same pill dimensions
+                    Surface(
+                        shape = RoundedCornerShape(17.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .height(34.dp)
+                            .testTag("active_running_badge")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(
+                                        color = when (timerState.phase) {
+                                            PomodoroPhase.WORK -> MaterialTheme.colorScheme.primary
+                                            PomodoroPhase.BREAK -> MaterialTheme.colorScheme.tertiary
+                                            PomodoroPhase.COMPLETED -> MaterialTheme.colorScheme.secondary
+                                        },
+                                        shape = CircleShape
+                                    )
+                            )
+                            Text(
+                                text = timerState.phase.label,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = when (timerState.phase) {
+                                    PomodoroPhase.WORK -> MaterialTheme.colorScheme.primary
+                                    PomodoroPhase.BREAK -> MaterialTheme.colorScheme.tertiary
+                                    PomodoroPhase.COMPLETED -> MaterialTheme.colorScheme.secondary
+                                },
+                                modifier = Modifier.testTag("active_phase_text")
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        // Large Center Clock Text (mm:ss)
+        // Large Center Clock Text (mm:ss) - steady calm color shift when paused (no blinking)
         Text(
             text = timerState.formattedTime,
             fontSize = 58.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (timerState.isPaused) {
+                MaterialTheme.colorScheme.secondary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
             letterSpacing = (-1).sp,
             modifier = Modifier
                 .padding(vertical = 4.dp)
                 .testTag("active_clock_text")
         )
 
-        // Bottom Control Buttons (Stop ■, Play/Pause ▶/||, Skip ⏭)
+        // Bottom Control Buttons (Stop ■, Play/Pause ▶/||, Skip ⏭ / 次へ) - strictly fixed sizes
         Row(
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
                 onClick = onStop,
-                modifier = Modifier.testTag("active_stop_button")
+                modifier = Modifier
+                    .size(52.dp)
+                    .testTag("active_stop_button")
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Filled.Stop,
                             contentDescription = "停止",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
             }
 
+            // Fixed size 56.dp in all states: color shift indicates paused vs running!
             IconButton(
-                onClick = { if (timerState.isRunning) onPause() else onResume() },
-                modifier = Modifier.testTag("active_play_pause_button")
+                onClick = { if (timerState.isPaused) onResume() else onPause() },
+                modifier = Modifier
+                    .size(56.dp)
+                    .testTag("active_play_pause_button")
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(54.dp)
+                    color = if (timerState.isPaused) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.primaryContainer
+                    },
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = if (timerState.isRunning) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (timerState.isRunning) "一時停止" else "再開",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            imageVector = if (timerState.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                            contentDescription = if (timerState.isPaused) "再開" else "一時停止",
+                            tint = if (timerState.isPaused) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            },
                             modifier = Modifier.size(32.dp)
                         )
                     }
                 }
             }
 
-            IconButton(
-                onClick = onSkip,
-                modifier = Modifier.testTag("active_skip_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.SkipNext,
-                    contentDescription = "スキップ",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(34.dp)
-                )
+            if (isOvertime) {
+                Button(
+                    onClick = onNextPhase,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .height(44.dp)
+                        .testTag("active_next_phase_button")
+                ) {
+                    Text("次へ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(
+                        imageVector = Icons.Filled.SkipNext,
+                        contentDescription = "次のセクションへ",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            } else {
+                IconButton(
+                    onClick = onSkip,
+                    modifier = Modifier.testTag("active_skip_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SkipNext,
+                        contentDescription = "スキップ",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(34.dp)
+                    )
+                }
             }
         }
     }
@@ -650,4 +801,216 @@ private fun NumberInputDialog(
         }
     )
 }
+
+@Composable
+fun StopwatchCircleDisplay(
+    stopwatchState: StopwatchState,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val trackColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val strokeColor = MaterialTheme.colorScheme.primary
+
+    Box(
+        modifier = modifier
+            .sizeIn(maxWidth = 310.dp, maxHeight = 310.dp)
+            .aspectRatio(1f)
+            .testTag("stopwatch_circle_container"),
+        contentAlignment = Alignment.Center
+    ) {
+        // Outer Arc Canvas - gauge stays strictly in initial state at all times per user request
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidth = 10.dp.toPx()
+            val diameter = size.minDimension - strokeWidth
+            val radius = diameter / 2f
+
+            // Base track ring
+            drawCircle(
+                color = trackColor.copy(alpha = 0.5f),
+                radius = radius,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+
+            // Initial standby indicator ring (kept unchanged at all times per user request)
+            drawCircle(
+                color = strokeColor.copy(alpha = 0.5f),
+                radius = radius,
+                style = Stroke(width = strokeWidth / 2f, cap = StrokeCap.Round)
+            )
+        }
+
+        // Inner Stopwatch Controls & Time Display (Matches Screenshot 4 & 6)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // Fixed-height (34dp) status container: zero layout jump or height shift on pause
+            Box(
+                modifier = Modifier.height(34.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (stopwatchState.isPaused) {
+                    Surface(
+                        shape = RoundedCornerShape(17.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier
+                            .height(34.dp)
+                            .testTag("stopwatch_paused_badge")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Pause,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "一時停止中",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                } else if (stopwatchState.isRunning) {
+                    Surface(
+                        shape = RoundedCornerShape(17.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .height(34.dp)
+                            .testTag("stopwatch_status_label")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                            )
+                            Text(
+                                text = "計測中",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Big 00:00:00 Time - steady calm color change when paused (no blinking)
+            Text(
+                text = stopwatchState.formattedTime,
+                fontSize = 42.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+                color = if (stopwatchState.isPaused) {
+                    MaterialTheme.colorScheme.secondary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                letterSpacing = 1.sp,
+                modifier = Modifier.testTag("stopwatch_time_text")
+            )
+
+            // Buttons - strictly fixed sizes so UI never jumps
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!stopwatchState.isRunning && !stopwatchState.isPaused) {
+                    // Stopped state (at 00:00:00): Big Start Button (Screenshot 4)
+                    IconButton(
+                        onClick = onStart,
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                            .testTag("stopwatch_start_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = "開始",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                } else if (stopwatchState.isRunning) {
+                    // Running: Stop (Square, 52dp) and Pause (Bars, 52dp)
+                    IconButton(
+                        onClick = onStop,
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape)
+                            .testTag("stopwatch_stop_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Stop,
+                            contentDescription = "停止して記録",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onPause,
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                            .testTag("stopwatch_pause_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Pause,
+                            contentDescription = "一時停止",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                } else {
+                    // Paused: Stop (Square, 52dp) and Resume (Play, exact same 52dp size with color highlight)
+                    IconButton(
+                        onClick = onStop,
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape)
+                            .testTag("stopwatch_stop_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Stop,
+                            contentDescription = "停止して記録",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onStart,
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                            .testTag("stopwatch_resume_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = "再開",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 

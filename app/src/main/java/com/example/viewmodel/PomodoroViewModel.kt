@@ -1,20 +1,101 @@
 package com.example.viewmodel
 
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import androidx.lifecycle.ViewModel
-import com.example.model.PomodoroSettings
-import com.example.model.PomodoroTimerState
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.AppDatabase
+import com.example.data.WorkSessionRepository
+import com.example.model.*
 import com.example.service.PomodoroService
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
 
-class PomodoroViewModel : ViewModel() {
+class PomodoroViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository: WorkSessionRepository =
+        WorkSessionRepository(AppDatabase.getInstance(application).workSessionDao())
 
     val timerState: StateFlow<PomodoroTimerState> = PomodoroService.timerState
+    val stopwatchState: StateFlow<StopwatchState> = PomodoroService.stopwatchState
+
+    // Navigation and Mode
+    private val _currentScreen = MutableStateFlow(AppScreen.MAIN)
+    val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
+
+    private val _timerMode = MutableStateFlow(TimerMode.POMODORO)
+    val timerMode: StateFlow<TimerMode> = _timerMode.asStateFlow()
+
+    // Calendar & Stats State
+    private val todayString: String
+        get() = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+
+    private val _selectedDate = MutableStateFlow(todayString)
+    val selectedDate: StateFlow<String> = _selectedDate.asStateFlow()
+
+    private val _statsPeriod = MutableStateFlow(StatsPeriod.WEEK)
+    val statsPeriod: StateFlow<StatsPeriod> = _statsPeriod.asStateFlow()
+
+    private val _statsPeriodOffset = MutableStateFlow(0)
+    val statsPeriodOffset: StateFlow<Int> = _statsPeriodOffset.asStateFlow()
+
+    // Interactive Bar Chart selection in Stats: index of selected bar (-1 for none)
+    private val _selectedBarIndex = MutableStateFlow<Int?>(null)
+    val selectedBarIndex: StateFlow<Int?> = _selectedBarIndex.asStateFlow()
+
+    // Reactive DB queries
+    val datesWithWork: StateFlow<List<String>> = repository.datesWithWork
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allSessions: StateFlow<List<WorkSession>> = repository.allSessions
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalWorkSeconds: StateFlow<Long> = repository.totalWorkSeconds
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    val sessionsForSelectedDate: StateFlow<List<WorkSession>> = _selectedDate
+        .flatMapLatest { date -> repository.getSessionsForDate(date) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val workSecondsForSelectedDate: StateFlow<Long> = sessionsForSelectedDate
+        .map { list -> list.sumOf { it.durationSeconds.toLong() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
     fun initSettings(context: Context) {
         PomodoroService.initSettingsIfNeeded(context)
+    }
+
+    fun navigateTo(screen: AppScreen) {
+        _currentScreen.value = screen
+        _selectedBarIndex.value = null
+    }
+
+    fun setTimerMode(mode: TimerMode) {
+        _timerMode.value = mode
+    }
+
+    fun selectDate(date: String) {
+        _selectedDate.value = date
+    }
+
+    fun setStatsPeriod(period: StatsPeriod) {
+        _statsPeriod.value = period
+        _statsPeriodOffset.value = 0
+        _selectedBarIndex.value = null
+    }
+
+    fun shiftStatsPeriod(delta: Int) {
+        _statsPeriodOffset.value += delta
+        _selectedBarIndex.value = null
+    }
+
+    fun selectBar(index: Int?) {
+        _selectedBarIndex.value = if (_selectedBarIndex.value == index) null else index
     }
 
     // --- Pomodoro Service Actions ---
@@ -35,9 +116,29 @@ class PomodoroViewModel : ViewModel() {
         sendServiceAction(context, PomodoroService.ACTION_SKIP)
     }
 
+    fun nextPhase(context: Context) {
+        sendServiceAction(context, PomodoroService.ACTION_NEXT_PHASE)
+    }
+
     fun stopTimer(context: Context) {
         sendServiceAction(context, PomodoroService.ACTION_STOP)
     }
+
+    // --- Stopwatch Service Actions ---
+
+    fun startStopwatch(context: Context) {
+        sendServiceAction(context, PomodoroService.ACTION_STOPWATCH_START)
+    }
+
+    fun pauseStopwatch(context: Context) {
+        sendServiceAction(context, PomodoroService.ACTION_STOPWATCH_PAUSE)
+    }
+
+    fun stopStopwatch(context: Context) {
+        sendServiceAction(context, PomodoroService.ACTION_STOPWATCH_STOP)
+    }
+
+    // --- Settings Updates ---
 
     fun updateSettings(context: Context, newSettings: PomodoroSettings) {
         if (!timerState.value.isRunning && !timerState.value.isPaused) {
@@ -53,6 +154,8 @@ class PomodoroViewModel : ViewModel() {
                 putExtra(PomodoroService.EXTRA_VIBRATE_ENABLED, newSettings.vibrateEnabled)
                 putExtra(PomodoroService.EXTRA_AUTO_START_BREAK, newSettings.autoStartBreak)
                 putExtra(PomodoroService.EXTRA_AUTO_START_WORK, newSettings.autoStartWork)
+                putExtra(PomodoroService.EXTRA_CONTINUE_WORK_UNTIL_MANUAL, newSettings.continueWorkUntilManual)
+                putExtra(PomodoroService.EXTRA_CONTINUE_BREAK_UNTIL_MANUAL, newSettings.continueBreakUntilManual)
                 putExtra(PomodoroService.EXTRA_THEME_MODE, newSettings.themeMode.name)
             }
             try {
@@ -94,6 +197,28 @@ class PomodoroViewModel : ViewModel() {
         val current = timerState.value.settings
         val updated = current.copy(flashEnabled = !current.flashEnabled)
         updateSettings(context, updated)
+    }
+
+    // --- JSON Export & Import ---
+
+    suspend fun exportDataToJson(): String {
+        return repository.exportToJson()
+    }
+
+    suspend fun importDataFromJson(json: String, clearExisting: Boolean = false): Result<Int> {
+        return repository.importFromJson(json, clearExisting)
+    }
+
+    fun deleteSession(sessionId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteSession(sessionId)
+        }
+    }
+
+    fun updateWorkTimeForDate(date: String, durationSeconds: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.setWorkDurationForDate(date, durationSeconds)
+        }
     }
 
     private fun sendServiceAction(context: Context, action: String) {

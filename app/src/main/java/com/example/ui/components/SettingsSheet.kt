@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material3.*
@@ -29,6 +30,8 @@ fun SettingsSheet(
 ) {
     var autoStartBreak by remember { mutableStateOf(settings.autoStartBreak) }
     var autoStartWork by remember { mutableStateOf(settings.autoStartWork) }
+    var continueWorkUntilManual by remember { mutableStateOf(settings.continueWorkUntilManual) }
+    var continueBreakUntilManual by remember { mutableStateOf(settings.continueBreakUntilManual) }
     var themeMode by remember { mutableStateOf(settings.themeMode) }
 
     ModalBottomSheet(
@@ -97,7 +100,7 @@ fun SettingsSheet(
             SettingToggleRow(
                 icon = { Icon(Icons.Filled.Coffee, contentDescription = null) },
                 title = "休憩の自動開始",
-                subtitle = "作業完了時に自動で休憩カウントを開始",
+                subtitle = "作業終了後に自動で休憩を開始",
                 checked = autoStartBreak,
                 onCheckedChange = { autoStartBreak = it },
                 testTag = "auto_start_break_toggle"
@@ -106,10 +109,28 @@ fun SettingsSheet(
             SettingToggleRow(
                 icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
                 title = "作業の自動開始",
-                subtitle = "休憩完了時に自動で次の作業カウントを開始",
+                subtitle = "休憩終了後に自動で作業を開始",
                 checked = autoStartWork,
                 onCheckedChange = { autoStartWork = it },
                 testTag = "auto_start_work_toggle"
+            )
+
+            SettingToggleRow(
+                icon = { Icon(Icons.Filled.HourglassTop, contentDescription = null) },
+                title = "手動切り替えまで作業継続",
+                subtitle = "作業終了後も手動切替まで計測継続",
+                checked = continueWorkUntilManual,
+                onCheckedChange = { continueWorkUntilManual = it },
+                testTag = "continue_work_until_manual_toggle"
+            )
+
+            SettingToggleRow(
+                icon = { Icon(Icons.Filled.Coffee, contentDescription = null) },
+                title = "手動切り替えまで休憩継続",
+                subtitle = "休憩終了後も手動切替まで計測継続",
+                checked = continueBreakUntilManual,
+                onCheckedChange = { continueBreakUntilManual = it },
+                testTag = "continue_break_until_manual_toggle"
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -121,6 +142,8 @@ fun SettingsSheet(
                         settings.copy(
                             autoStartBreak = autoStartBreak,
                             autoStartWork = autoStartWork,
+                            continueWorkUntilManual = continueWorkUntilManual,
+                            continueBreakUntilManual = continueBreakUntilManual,
                             themeMode = themeMode
                         )
                     )

@@ -1,5 +1,5 @@
 {
-  "name": "Pomodoro Timer",
+  "name": "ポモドーロタイマー",
   "description": "直感的に操作できるポモドーロタイマー。セット数、作業・休憩時間のカスタム、完了時のサウンド＆フラッシュライト点滅、ライブ通知機能に対応。",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -54,4 +54,44 @@ class ExampleRobolectricTest {
     assertTrue(loaded.autoStartWork)
     assertEquals(AppThemeMode.DARK, loaded.themeMode)
   }
+
+  @Test
+  fun `room database insert and json export import`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = com.example.data.AppDatabase.getInstance(context)
+    val repo = com.example.data.WorkSessionRepository(db.workSessionDao())
+    repo.clearAll()
+
+    val session1 = com.example.model.WorkSession(
+      date = "2026-09-26",
+      startTimeMillis = 1700000000000L,
+      durationSeconds = 1500,
+      sessionType = "POMODORO"
+    )
+    val session2 = com.example.model.WorkSession(
+      date = "2026-09-26",
+      startTimeMillis = 1700003600000L,
+      durationSeconds = 900,
+      sessionType = "STOPWATCH"
+    )
+
+    repo.insertSession(session1)
+    repo.insertSession(session2)
+
+    val all = repo.getAllSessionsSnapshot()
+    assertEquals(2, all.size)
+
+    val json = repo.exportToJson()
+    assertTrue(json.contains("\"durationSeconds\": 1500"))
+    assertTrue(json.contains("\"sessionType\": \"POMODORO\""))
+    assertTrue(json.contains("\"sessionType\": \"STOPWATCH\""))
+
+    repo.clearAll()
+    assertEquals(0, repo.getAllSessionsSnapshot().size)
+
+    val importResult = repo.importFromJson(json)
+    assertTrue(importResult.isSuccess)
+    assertEquals(2, importResult.getOrNull())
+    assertEquals(2, repo.getAllSessionsSnapshot().size)
+  }
 }

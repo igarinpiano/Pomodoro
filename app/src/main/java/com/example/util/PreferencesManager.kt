@@ -19,6 +19,8 @@ class PreferencesManager(context: Context) {
             putBoolean(KEY_VIBRATE_ENABLED, settings.vibrateEnabled)
             putBoolean(KEY_AUTO_START_BREAK, settings.autoStartBreak)
             putBoolean(KEY_AUTO_START_WORK, settings.autoStartWork)
+            putBoolean(KEY_CONTINUE_WORK_UNTIL_MANUAL, settings.continueWorkUntilManual)
+            putBoolean(KEY_CONTINUE_BREAK_UNTIL_MANUAL, settings.continueBreakUntilManual)
             putString(KEY_THEME_MODE, settings.themeMode.name)
             apply()
         }
@@ -33,6 +35,8 @@ class PreferencesManager(context: Context) {
         val vibrateEnabled = prefs.getBoolean(KEY_VIBRATE_ENABLED, true)
         val autoStartBreak = prefs.getBoolean(KEY_AUTO_START_BREAK, true)
         val autoStartWork = prefs.getBoolean(KEY_AUTO_START_WORK, true)
+        val continueWorkUntilManual = prefs.getBoolean(KEY_CONTINUE_WORK_UNTIL_MANUAL, false)
+        val continueBreakUntilManual = prefs.getBoolean(KEY_CONTINUE_BREAK_UNTIL_MANUAL, false)
         val themeModeStr = prefs.getString(KEY_THEME_MODE, AppThemeMode.SYSTEM.name)
         val themeMode = try {
             AppThemeMode.valueOf(themeModeStr ?: AppThemeMode.SYSTEM.name)
@@ -49,6 +53,8 @@ class PreferencesManager(context: Context) {
             vibrateEnabled = vibrateEnabled,
             autoStartBreak = autoStartBreak,
             autoStartWork = autoStartWork,
+            continueWorkUntilManual = continueWorkUntilManual,
+            continueBreakUntilManual = continueBreakUntilManual,
             themeMode = themeMode
         )
     }
@@ -62,6 +68,8 @@ class PreferencesManager(context: Context) {
         private const val KEY_VIBRATE_ENABLED = "vibrate_enabled"
         private const val KEY_AUTO_START_BREAK = "auto_start_break"
         private const val KEY_AUTO_START_WORK = "auto_start_work"
+        private const val KEY_CONTINUE_WORK_UNTIL_MANUAL = "continue_work_until_manual"
+        private const val KEY_CONTINUE_BREAK_UNTIL_MANUAL = "continue_break_until_manual"
         private const val KEY_THEME_MODE = "theme_mode"
     }
 }

@@ -80,4 +80,18 @@ class ExampleUnitTest {
         assertEquals("休憩中", PomodoroPhase.BREAK.label)
         assertEquals("全セット完了", PomodoroPhase.COMPLETED.label)
     }
+
+    @Test
+    fun testStopwatchState() {
+        val stopwatch = com.example.model.StopwatchState(
+            elapsedSeconds = 3665
+        )
+        // 1 hour, 1 minute, 5 seconds = 01:01:05
+        assertEquals("01:01:05", stopwatch.formattedTime)
+
+        val stopwatchZero = com.example.model.StopwatchState(
+            elapsedSeconds = 0
+        )
+        assertEquals("00:00:00", stopwatchZero.formattedTime)
+    }
 }

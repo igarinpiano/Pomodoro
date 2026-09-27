@@ -15,10 +15,13 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.MainActivity
+import com.example.data.AppDatabase
 import com.example.model.AppThemeMode
 import com.example.model.PomodoroPhase
 import com.example.model.PomodoroSettings
 import com.example.model.PomodoroTimerState
+import com.example.model.StopwatchState
+import com.example.model.WorkSession
 import com.example.util.FlashlightManager
 import com.example.util.PreferencesManager
 import com.example.util.SoundManager
@@ -26,21 +29,26 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlin.time.Duration.Companion.seconds
-
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration.Companion.seconds
 
 class PomodoroService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
     private var timerJob: Job? = null
+    private var stopwatchJob: Job? = null
     private val isTransitioning = AtomicBoolean(false)
+    private var hasAlertedForCurrentPhase = false
 
     private lateinit var soundManager: SoundManager
     private lateinit var flashlightManager: FlashlightManager
     private lateinit var alarmManager: AlarmManager
 
     private var targetEndElapsedRealtime: Long = 0L
+    private var stopwatchStartElapsedRealtime: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -55,7 +63,7 @@ class PomodoroService : Service() {
         val action = intent?.action ?: return START_NOT_STICKY
 
         // Ensure startForeground is called promptly to satisfy Android Foreground Service requirements
-        if (action != ACTION_STOP) {
+        if (action != ACTION_STOP && action != ACTION_STOPWATCH_STOP) {
             startForegroundCompat()
         }
 
@@ -64,8 +72,21 @@ class PomodoroService : Service() {
             ACTION_PAUSE -> pauseTimer()
             ACTION_RESUME -> resumeTimer()
             ACTION_SKIP -> skipSet()
+            ACTION_NEXT_PHASE -> onPhaseComplete(isSkip = false)
             ACTION_STOP -> stopTimer()
-            ACTION_ALARM_COMPLETE -> onPhaseComplete(isSkip = false)
+            ACTION_ALARM_COMPLETE -> {
+                val state = _timerState.value
+                val isOvertimeMode = (state.phase == PomodoroPhase.WORK && state.settings.continueWorkUntilManual) ||
+                                     (state.phase == PomodoroPhase.BREAK && state.settings.continueBreakUntilManual)
+                if (isOvertimeMode) {
+                    handleTargetReachedInOvertime()
+                } else {
+                    onPhaseComplete(isSkip = false)
+                }
+            }
+            ACTION_STOPWATCH_START -> startStopwatch()
+            ACTION_STOPWATCH_PAUSE -> pauseStopwatch()
+            ACTION_STOPWATCH_STOP -> stopStopwatch()
             ACTION_UPDATE_SETTINGS -> {
                 val workMins = intent.getIntExtra(EXTRA_WORK_MINS, _timerState.value.settings.workDurationMinutes)
                 val breakMins = intent.getIntExtra(EXTRA_BREAK_MINS, _timerState.value.settings.breakDurationMinutes)
@@ -75,6 +96,8 @@ class PomodoroService : Service() {
                 val vibrateEnabled = intent.getBooleanExtra(EXTRA_VIBRATE_ENABLED, _timerState.value.settings.vibrateEnabled)
                 val autoStartBreak = intent.getBooleanExtra(EXTRA_AUTO_START_BREAK, _timerState.value.settings.autoStartBreak)
                 val autoStartWork = intent.getBooleanExtra(EXTRA_AUTO_START_WORK, _timerState.value.settings.autoStartWork)
+                val continueWorkUntilManual = intent.getBooleanExtra(EXTRA_CONTINUE_WORK_UNTIL_MANUAL, _timerState.value.settings.continueWorkUntilManual)
+                val continueBreakUntilManual = intent.getBooleanExtra(EXTRA_CONTINUE_BREAK_UNTIL_MANUAL, _timerState.value.settings.continueBreakUntilManual)
                 val themeModeName = intent.getStringExtra(EXTRA_THEME_MODE)
                 val themeMode = try {
                     if (themeModeName != null) AppThemeMode.valueOf(themeModeName)
@@ -93,6 +116,8 @@ class PomodoroService : Service() {
                         vibrateEnabled = vibrateEnabled,
                         autoStartBreak = autoStartBreak,
                         autoStartWork = autoStartWork,
+                        continueWorkUntilManual = continueWorkUntilManual,
+                        continueBreakUntilManual = continueBreakUntilManual,
                         themeMode = themeMode
                     )
                 )
@@ -103,12 +128,13 @@ class PomodoroService : Service() {
     }
 
     private fun startTimer() {
+        dismissEventNotification()
+        hasAlertedForCurrentPhase = false
         val currentState = _timerState.value
         val settings = currentState.settings
 
         val initialPhase = PomodoroPhase.WORK
         val initialSet = 1
-
         val durationSecs = settings.workDurationMinutes * 60
 
         _timerState.value = currentState.copy(
@@ -118,7 +144,8 @@ class PomodoroService : Service() {
             isRunning = true,
             isPaused = false,
             totalDurationSeconds = durationSecs,
-            timeLeftSeconds = durationSecs
+            timeLeftSeconds = durationSecs,
+            overtimeSeconds = 0
         )
 
         targetEndElapsedRealtime = SystemClock.elapsedRealtime() + (durationSecs * 1000L)
@@ -129,23 +156,37 @@ class PomodoroService : Service() {
     }
 
     private fun pauseTimer() {
-        val remaining = (((targetEndElapsedRealtime - SystemClock.elapsedRealtime()) + 999) / 1000).toInt().coerceAtLeast(0)
-        _timerState.value = _timerState.value.copy(
-            isRunning = false,
-            isPaused = true,
-            timeLeftSeconds = remaining,
-        )
+        val state = _timerState.value
+        if (state.overtimeSeconds > 0) {
+            _timerState.value = state.copy(
+                isRunning = false,
+                isPaused = true,
+                timeLeftSeconds = 0
+            )
+        } else {
+            val remaining = (((targetEndElapsedRealtime - SystemClock.elapsedRealtime()) + 999) / 1000).toInt().coerceAtLeast(0)
+            _timerState.value = state.copy(
+                isRunning = false,
+                isPaused = true,
+                timeLeftSeconds = remaining,
+            )
+        }
         cancelAlarm()
         timerJob?.cancel()
         updateNotification()
     }
 
     private fun resumeTimer() {
-        val remainingSecs = _timerState.value.timeLeftSeconds.coerceAtLeast(1)
-        targetEndElapsedRealtime = SystemClock.elapsedRealtime() + (remainingSecs * 1000L)
-        scheduleAlarm(targetEndElapsedRealtime)
+        val state = _timerState.value
+        if (state.overtimeSeconds > 0) {
+            targetEndElapsedRealtime = SystemClock.elapsedRealtime() - (state.overtimeSeconds * 1000L)
+        } else {
+            val remainingSecs = state.timeLeftSeconds.coerceAtLeast(1)
+            targetEndElapsedRealtime = SystemClock.elapsedRealtime() + (remainingSecs * 1000L)
+            scheduleAlarm(targetEndElapsedRealtime)
+        }
 
-        _timerState.value = _timerState.value.copy(
+        _timerState.value = state.copy(
             isRunning = true,
             isPaused = false,
         )
@@ -154,29 +195,127 @@ class PomodoroService : Service() {
     }
 
     private fun skipSet() {
+        dismissEventNotification()
         cancelAlarm()
         timerJob?.cancel()
         onPhaseComplete(isSkip = true)
     }
 
     private fun stopTimer() {
+        dismissEventNotification()
         cancelAlarm()
         timerJob?.cancel()
-        val settings = _timerState.value.settings
+        hasAlertedForCurrentPhase = false
+        val state = _timerState.value
+        val settings = state.settings
+
+        // If stopped during overtime or work session, record the session to Room Database
+        val durationSecs = (state.totalDurationSeconds - state.timeLeftSeconds) + state.overtimeSeconds
+        if (state.phase == PomodoroPhase.WORK && durationSecs > 0) {
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            serviceScope.launch(Dispatchers.IO) {
+                AppDatabase.getInstance(this@PomodoroService).workSessionDao().insert(
+                    WorkSession(
+                        date = today,
+                        startTimeMillis = System.currentTimeMillis() - (durationSecs * 1000L),
+                        durationSeconds = durationSecs,
+                        sessionType = "POMODORO"
+                    )
+                )
+            }
+        }
+
+        val workSecs = settings.workDurationMinutes * 60
         _timerState.value = PomodoroTimerState(
             phase = PomodoroPhase.WORK,
             currentSet = 1,
             totalSets = settings.totalSets,
-            totalDurationSeconds = settings.workDurationMinutes * 60,
-            timeLeftSeconds = settings.workDurationMinutes * 60,
+            totalDurationSeconds = workSecs,
+            timeLeftSeconds = workSecs,
+            overtimeSeconds = 0,
             isRunning = false,
             isPaused = false,
             settings = settings
         )
-        try {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } catch (_: Exception) {}
-        stopSelf()
+        if (!_stopwatchState.value.isRunning && !_stopwatchState.value.isPaused) {
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (_: Exception) {}
+            stopSelf()
+        } else {
+            updateNotification()
+        }
+    }
+
+    // --- Stopwatch Functions ---
+    private fun startStopwatch() {
+        dismissEventNotification()
+        val current = _stopwatchState.value
+        val alreadyElapsed = current.elapsedSeconds
+        stopwatchStartElapsedRealtime = SystemClock.elapsedRealtime() - (alreadyElapsed * 1000L)
+
+        _stopwatchState.value = current.copy(
+            isRunning = true,
+            isPaused = false,
+            startTimestampMillis = if (alreadyElapsed == 0) System.currentTimeMillis() else current.startTimestampMillis
+        )
+        startForegroundCompat()
+        runStopwatchTicker()
+    }
+
+    private fun pauseStopwatch() {
+        dismissEventNotification()
+        stopwatchJob?.cancel()
+        val elapsed = ((SystemClock.elapsedRealtime() - stopwatchStartElapsedRealtime) / 1000L).toInt().coerceAtLeast(0)
+        _stopwatchState.value = _stopwatchState.value.copy(
+            isRunning = false,
+            isPaused = true,
+            elapsedSeconds = elapsed
+        )
+        updateNotification()
+    }
+
+    private fun stopStopwatch() {
+        dismissEventNotification()
+        stopwatchJob?.cancel()
+        val duration = _stopwatchState.value.elapsedSeconds
+        if (duration > 0) {
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            serviceScope.launch(Dispatchers.IO) {
+                AppDatabase.getInstance(this@PomodoroService).workSessionDao().insert(
+                    WorkSession(
+                        date = today,
+                        startTimeMillis = System.currentTimeMillis() - (duration * 1000L),
+                        durationSeconds = duration,
+                        sessionType = "STOPWATCH"
+                    )
+                )
+            }
+        }
+        _stopwatchState.value = StopwatchState()
+
+        if (!_timerState.value.isRunning && !_timerState.value.isPaused) {
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (_: Exception) {}
+            stopSelf()
+        } else {
+            updateNotification()
+        }
+    }
+
+    private fun runStopwatchTicker() {
+        stopwatchJob?.cancel()
+        stopwatchJob = serviceScope.launch {
+            while (isActive && _stopwatchState.value.isRunning) {
+                val elapsed = ((SystemClock.elapsedRealtime() - stopwatchStartElapsedRealtime) / 1000L).toInt().coerceAtLeast(0)
+                _stopwatchState.value = _stopwatchState.value.copy(elapsedSeconds = elapsed)
+                if (!_timerState.value.isRunning) {
+                    updateNotification()
+                }
+                delay(1.seconds)
+            }
+        }
     }
 
     private fun startForegroundCompat() {
@@ -219,18 +358,67 @@ class PomodoroService : Service() {
         }
     }
 
+    private fun handleTargetReachedInOvertime() {
+        if (hasAlertedForCurrentPhase) return
+        hasAlertedForCurrentPhase = true
+        cancelAlarm()
+
+        val state = _timerState.value
+        val settings = state.settings
+
+        if (settings.soundEnabled) {
+            soundManager.playAlertSound()
+        }
+        if (settings.vibrateEnabled) {
+            soundManager.vibrate()
+        }
+        if (settings.flashEnabled) {
+            flashlightManager.flash(count = 6, delayMs = 180L, scope = serviceScope)
+        }
+
+        if (state.phase == PomodoroPhase.WORK) {
+            sendPushEventNotification(
+                title = "作業終了 [${state.currentSet}/${settings.totalSets}]",
+                message = "作業を継続中"
+            )
+        } else {
+            sendPushEventNotification(
+                title = "休憩終了 [${state.currentSet}/${settings.totalSets}]",
+                message = "休憩を継続中"
+            )
+        }
+    }
+
     private fun runTicker() {
         timerJob?.cancel()
         timerJob = serviceScope.launch {
             while (isActive && _timerState.value.isRunning && !_timerState.value.isPaused) {
-                val remaining = ((targetEndElapsedRealtime - SystemClock.elapsedRealtime() + 999) / 1000).toInt().coerceAtLeast(0)
-                _timerState.value = _timerState.value.copy(timeLeftSeconds = remaining)
-                updateNotification()
+                val now = SystemClock.elapsedRealtime()
+                val state = _timerState.value
 
-                if (remaining <= 0) {
-                    onPhaseComplete(isSkip = false)
-                    break
+                val isOvertimeMode = (state.phase == PomodoroPhase.WORK && state.settings.continueWorkUntilManual) ||
+                                     (state.phase == PomodoroPhase.BREAK && state.settings.continueBreakUntilManual)
+
+                if (isOvertimeMode) {
+                    val remaining = ((targetEndElapsedRealtime - now + 999) / 1000).toInt()
+                    if (remaining > 0) {
+                        _timerState.value = state.copy(timeLeftSeconds = remaining, overtimeSeconds = 0)
+                    } else {
+                        val overtime = ((now - targetEndElapsedRealtime) / 1000).toInt().coerceAtLeast(0)
+                        if (!hasAlertedForCurrentPhase) {
+                            handleTargetReachedInOvertime()
+                        }
+                        _timerState.value = state.copy(timeLeftSeconds = 0, overtimeSeconds = overtime)
+                    }
+                } else {
+                    val remaining = ((targetEndElapsedRealtime - now + 999) / 1000).toInt().coerceAtLeast(0)
+                    _timerState.value = state.copy(timeLeftSeconds = remaining, overtimeSeconds = 0)
+                    if (remaining <= 0) {
+                        onPhaseComplete(isSkip = false)
+                        break
+                    }
                 }
+                updateNotification()
                 delay(1.seconds)
             }
         }
@@ -244,12 +432,32 @@ class PomodoroService : Service() {
         try {
             cancelAlarm()
             timerJob?.cancel()
+            val wasOvertime = hasAlertedForCurrentPhase
+            hasAlertedForCurrentPhase = false
 
             val state = _timerState.value
             val settings = state.settings
 
-            // アラート（音、バイブ、フラッシュ）
-            if (!isSkip) {
+            // Save WORK session to local Room Database (even if skipped, preserve elapsed work time)
+            if (state.phase == PomodoroPhase.WORK) {
+                val durationSecs = (state.totalDurationSeconds - state.timeLeftSeconds) + state.overtimeSeconds
+                if (durationSecs > 0) {
+                    val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                    serviceScope.launch(Dispatchers.IO) {
+                        AppDatabase.getInstance(this@PomodoroService).workSessionDao().insert(
+                            WorkSession(
+                                date = today,
+                                startTimeMillis = System.currentTimeMillis() - (durationSecs * 1000L),
+                                durationSeconds = durationSecs,
+                                sessionType = "POMODORO"
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Alerts (sound, vibrate, flash) - only if not already alerted when target reached in overtime
+            if (!isSkip && !wasOvertime) {
                 if (settings.soundEnabled) {
                     soundManager.playAlertSound()
                 }
@@ -264,28 +472,28 @@ class PomodoroService : Service() {
             when (state.phase) {
                 PomodoroPhase.WORK -> {
                     if (state.currentSet >= settings.totalSets) {
-                        // ★最終セットの作業終了：休憩は挟まずに直ちに全セット完了とする！
                         _timerState.value = state.copy(
                             phase = PomodoroPhase.COMPLETED,
                             isRunning = false,
                             isPaused = false,
                             timeLeftSeconds = 0,
+                            overtimeSeconds = 0
                         )
                         updateNotification()
                         if (!isSkip) {
                             sendPushEventNotification(
-                                title = "🎉 全セット完了！お疲れ様でした！",
-                                message = "すべてのポモドーロセット（全${settings.totalSets}セット）を達成しました！"
+                                title = "全セット完了",
+                                message = "お疲れ様でした"
                             )
                         }
                     } else {
-                        // 休憩フェーズへ移行
                         val nextDuration = settings.breakDurationMinutes * 60
                         val autoStart = settings.autoStartBreak
                         _timerState.value = state.copy(
                             phase = PomodoroPhase.BREAK,
                             totalDurationSeconds = nextDuration,
                             timeLeftSeconds = nextDuration,
+                            overtimeSeconds = 0,
                             isRunning = autoStart,
                             isPaused = !autoStart
                         )
@@ -299,7 +507,6 @@ class PomodoroService : Service() {
                             updateNotification()
                         }
 
-                        // 休憩開始プッシュ通知
                         if (!isSkip) {
                             sendBreakNotification(
                                 currentSet = state.currentSet,
@@ -319,6 +526,7 @@ class PomodoroService : Service() {
                             currentSet = nextSet,
                             totalDurationSeconds = nextDuration,
                             timeLeftSeconds = nextDuration,
+                            overtimeSeconds = 0,
                             isRunning = autoStart,
                             isPaused = !autoStart
                         )
@@ -332,7 +540,6 @@ class PomodoroService : Service() {
                             updateNotification()
                         }
 
-                        // 作業再開プッシュ通知
                         if (!isSkip) {
                             sendWorkNotification(
                                 currentSet = nextSet,
@@ -346,12 +553,13 @@ class PomodoroService : Service() {
                             isRunning = false,
                             isPaused = false,
                             timeLeftSeconds = 0,
+                            overtimeSeconds = 0
                         )
                         updateNotification()
                         if (!isSkip) {
                             sendPushEventNotification(
-                                title = "🎉 全セット完了！お疲れ様でした！",
-                                message = "すべてのポモドーロセットを達成しました！"
+                                title = "全セット完了",
+                                message = "お疲れ様でした"
                             )
                         }
                     }
@@ -398,9 +606,7 @@ class PomodoroService : Service() {
                     pendingIntent
                 )
             }
-        } catch (_: Exception) {
-            // もし権限等で例外が発生してもTickerでフォールバック
-        }
+        } catch (_: Exception) {}
     }
 
     private fun cancelAlarm() {
@@ -423,18 +629,18 @@ class PomodoroService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-            // 1. ライブ通知チャンネル（低重要度: サイレント＆毎秒プログレス表示）
+            // 1. ライブ通知チャンネル（低重要度: サイレント＆毎秒プログレス/秒数表示）
             val liveChannel = NotificationChannel(
                 CHANNEL_LIVE_ID,
-                "ポモドーロタイマー 進行状況",
+                "タイマー 進行状況",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "タイマーの残り時間や進捗状況を表示します"
+                description = "タイマーの残り時間や秒数を表示します"
                 setShowBadge(false)
             }
             manager.createNotificationChannel(liveChannel)
 
-            // 2. イベント通知チャンネル（高重要度: Heads-up ポップアップバナー通知）
+            // 2. イベント通知チャンネル（高重要度: Heads-up ポップアップバナー通知・自動消去）
             val eventChannel = NotificationChannel(
                 CHANNEL_EVENT_ID,
                 "セット開始・完了通知",
@@ -454,8 +660,8 @@ class PomodoroService : Service() {
         durationMins: Int
     ) {
         sendPushEventNotification(
-            title = "作業終了！休憩時間です [セット $currentSet/$totalSets 完了]",
-            message = "少し体を休めましょう（${durationMins}分間）"
+            title = "休憩開始 [$currentSet/$totalSets]",
+            message = "${durationMins}分間の休憩"
         )
     }
 
@@ -465,8 +671,8 @@ class PomodoroService : Service() {
         durationMins: Int
     ) {
         sendPushEventNotification(
-            title = "休憩終了！作業を再開しましょう [セット $currentSet/$totalSets]",
-            message = "集中して取り組みましょう（${durationMins}分間）"
+            title = "作業開始 [$currentSet/$totalSets]",
+            message = "${durationMins}分間の作業"
         )
     }
 
@@ -480,6 +686,7 @@ class PomodoroService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // セクション通知：高重要度・端的な表示
         val builder = NotificationCompat.Builder(this, CHANNEL_EVENT_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
@@ -493,9 +700,14 @@ class PomodoroService : Service() {
         val manager = NotificationManagerCompat.from(this)
         try {
             manager.notify(EVENT_NOTIFICATION_ID, builder.build())
-        } catch (_: SecurityException) {
-            // Android 13+ で通知権限未許可の場合のエラーハンドリング
-        }
+        } catch (_: SecurityException) {}
+    }
+
+    private fun dismissEventNotification() {
+        try {
+            val manager = NotificationManagerCompat.from(this)
+            manager.cancel(EVENT_NOTIFICATION_ID)
+        } catch (_: Exception) {}
     }
 
     private fun createNotification(state: PomodoroTimerState): Notification {
@@ -508,22 +720,101 @@ class PomodoroService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val title = when (state.phase) {
-            PomodoroPhase.WORK -> "作業中 [セット ${state.currentSet}/${state.totalSets}]"
-            PomodoroPhase.BREAK -> "休憩中 [セット ${state.currentSet}/${state.totalSets}]"
-            PomodoroPhase.COMPLETED -> "🎉 全セット完了！お疲れ様でした！"
+        val stopwatch = _stopwatchState.value
+        // If Stopwatch is running or paused while Pomodoro is idle
+        if (!state.isRunning && !state.isPaused && (stopwatch.isRunning || stopwatch.isPaused)) {
+            val stStatus = if (stopwatch.isPaused) " (一時停止中)" else ""
+            val builder = NotificationCompat.Builder(this, CHANNEL_LIVE_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("ストップウォッチ")
+                .setContentText("${stopwatch.formattedTime}$stStatus")
+                .setContentIntent(contentIntent)
+                .setOngoing(stopwatch.isRunning)
+                .setShowWhen(false)
+                .setOnlyAlertOnce(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+
+            if (stopwatch.isRunning) {
+                builder.addAction(
+                    android.R.drawable.ic_media_pause,
+                    "一時停止",
+                    getPendingIntent(ACTION_STOPWATCH_PAUSE)
+                )
+            } else {
+                builder.addAction(
+                    android.R.drawable.ic_media_play,
+                    "再開",
+                    getPendingIntent(ACTION_STOPWATCH_START)
+                )
+            }
+            builder.addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "停止・記録",
+                getPendingIntent(ACTION_STOPWATCH_STOP)
+            )
+            return builder.build()
         }
 
-        val text = when {
-            state.phase == PomodoroPhase.COMPLETED -> "すべてのセットを達成しました"
-            state.isPaused -> "残り時間: ${state.formattedTime} (一時停止中)"
-            else -> "残り時間: ${state.formattedTime}"
+        if (state.overtimeSeconds > 0) {
+            val status = if (state.isPaused) " (一時停止中)" else ""
+            val otLabel = if (state.phase == PomodoroPhase.WORK) "作業継続中" else "休憩継続中"
+            val otTitle = "$otLabel [${state.currentSet}/${state.totalSets}]"
+            val otText = "+${state.formattedOvertime}$status"
+
+            val builder = NotificationCompat.Builder(this, CHANNEL_LIVE_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(otTitle)
+                .setContentText(otText)
+                .setContentIntent(contentIntent)
+                .setOngoing(state.isRunning || state.isPaused)
+                .setShowWhen(false)
+                .setOnlyAlertOnce(true)
+                .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+
+            val totalSecs = state.totalDurationSeconds.coerceAtLeast(1)
+            builder.setProgress(totalSecs, totalSecs, false)
+
+            builder.addAction(
+                android.R.drawable.ic_media_next,
+                "次のセクションへ",
+                getPendingIntent(ACTION_NEXT_PHASE)
+            )
+
+            if (state.isRunning) {
+                builder.addAction(
+                    android.R.drawable.ic_media_pause,
+                    "一時停止",
+                    getPendingIntent(ACTION_PAUSE)
+                )
+            } else if (state.isPaused) {
+                builder.addAction(
+                    android.R.drawable.ic_media_play,
+                    "再開",
+                    getPendingIntent(ACTION_RESUME)
+                )
+            }
+
+            builder.addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "停止",
+                getPendingIntent(ACTION_STOP)
+            )
+
+            return builder.build()
         }
+
+        val phaseLabel = if (state.phase == PomodoroPhase.WORK) "作業中" else "休憩中"
+        val status = if (state.isPaused) " (一時停止中)" else ""
+        val notifTitle = if (state.phase == PomodoroPhase.COMPLETED) "全セット完了" else "$phaseLabel [${state.currentSet}/${state.totalSets}]"
+        val notifText = if (state.phase == PomodoroPhase.COMPLETED) "お疲れ様でした" else "${state.formattedTime}$status"
 
         val builder = NotificationCompat.Builder(this, CHANNEL_LIVE_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(text)
+            .setContentTitle(notifTitle)
+            .setContentText(notifText)
             .setContentIntent(contentIntent)
             .setOngoing(state.isRunning || state.isPaused)
             .setShowWhen(false)
@@ -533,7 +824,6 @@ class PomodoroService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
         if (state.phase != PomodoroPhase.COMPLETED) {
-            // Live Progress Bar
             val totalSecs = state.totalDurationSeconds.coerceAtLeast(1)
             val elapsedSecs = (totalSecs - state.timeLeftSeconds).coerceAtLeast(0)
             builder.setProgress(totalSecs, elapsedSecs, false)
@@ -588,8 +878,10 @@ class PomodoroService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        dismissEventNotification()
         cancelAlarm()
         timerJob?.cancel()
+        stopwatchJob?.cancel()
         serviceScope.cancel()
         soundManager.release()
         super.onDestroy()
@@ -606,9 +898,14 @@ class PomodoroService : Service() {
         const val ACTION_PAUSE = "com.example.action.PAUSE"
         const val ACTION_RESUME = "com.example.action.RESUME"
         const val ACTION_SKIP = "com.example.action.SKIP"
+        const val ACTION_NEXT_PHASE = "com.example.action.NEXT_PHASE"
         const val ACTION_STOP = "com.example.action.STOP"
         const val ACTION_ALARM_COMPLETE = "com.example.action.ALARM_COMPLETE"
         const val ACTION_UPDATE_SETTINGS = "com.example.action.UPDATE_SETTINGS"
+
+        const val ACTION_STOPWATCH_START = "com.example.action.STOPWATCH_START"
+        const val ACTION_STOPWATCH_PAUSE = "com.example.action.STOPWATCH_PAUSE"
+        const val ACTION_STOPWATCH_STOP = "com.example.action.STOPWATCH_STOP"
 
         const val EXTRA_WORK_MINS = "extra_work_mins"
         const val EXTRA_BREAK_MINS = "extra_break_mins"
@@ -618,10 +915,16 @@ class PomodoroService : Service() {
         const val EXTRA_VIBRATE_ENABLED = "extra_vibrate_enabled"
         const val EXTRA_AUTO_START_BREAK = "extra_auto_start_break"
         const val EXTRA_AUTO_START_WORK = "extra_auto_start_work"
+        const val EXTRA_CONTINUE_WORK_UNTIL_MANUAL = "extra_continue_work_until_manual"
+        const val EXTRA_CONTINUE_BREAK_UNTIL_MANUAL = "extra_continue_break_until_manual"
         const val EXTRA_THEME_MODE = "extra_theme_mode"
 
         private val _timerState = MutableStateFlow(PomodoroTimerState())
         val timerState: StateFlow<PomodoroTimerState> = _timerState.asStateFlow()
+
+        private val _stopwatchState = MutableStateFlow(StopwatchState())
+        val stopwatchState: StateFlow<StopwatchState> = _stopwatchState.asStateFlow()
+
         private var isSettingsInitialized = false
 
         fun initSettingsIfNeeded(context: Context) {
