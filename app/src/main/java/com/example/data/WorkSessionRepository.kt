@@ -38,9 +38,7 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
                 WorkSession(
                     date = date,
                     startTimeMillis = System.currentTimeMillis(),
-                    durationSeconds = durationSeconds.toInt(),
-                    sessionType = "MANUAL",
-                    note = "手動入力"
+                    durationSeconds = durationSeconds.toInt()
                 )
             )
         }
@@ -51,28 +49,33 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
     }
 
     /**
-     * JSON形式に全作業履歴をエクスポートする
+     * JSON形式に日付ごとの作業時間をエクスポートする
      */
     suspend fun exportToJson(): String {
         val sessions = dao.getAllSessionsSnapshot()
-        val jsonArray = JSONArray()
+        // 日付ごとに合計作業時間を集計
+        val dailyMap = sortedMapOf<String, Long>()
         for (session in sessions) {
-            val obj = JSONObject().apply {
-                put("id", session.id)
-                put("date", session.date)
-                put("startTimeMillis", session.startTimeMillis)
-                put("durationSeconds", session.durationSeconds)
-                put("sessionType", session.sessionType)
-                put("note", session.note)
-            }
-            jsonArray.put(obj)
+            dailyMap[session.date] = (dailyMap[session.date] ?: 0L) + session.durationSeconds
         }
+
+        val jsonArray = JSONArray()
+        for ((date, seconds) in dailyMap) {
+            if (seconds > 0) {
+                val obj = JSONObject().apply {
+                    put("date", date)
+                    put("durationSeconds", seconds)
+                }
+                jsonArray.put(obj)
+            }
+        }
+
         val root = JSONObject().apply {
             put("version", 1)
             put("appName", "PomodoroTimer")
             put("exportedAt", System.currentTimeMillis())
-            put("sessionCount", sessions.size)
-            put("sessions", jsonArray)
+            put("daysCount", jsonArray.length())
+            put("dailyRecords", jsonArray)
         }
         return root.toString(2)
     }
@@ -81,35 +84,33 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
      * JSON形式から作業履歴をインポートする
      * @param jsonString インポート元のJSON文字列
      * @param clearExisting 既存データを消去して置き換えるか
-     * @return インポートされたセッション数
+     * @return インポートされた日数
      */
     suspend fun importFromJson(jsonString: String, clearExisting: Boolean = false): Result<Int> {
         return runCatching {
-            val root = JSONObject(jsonString)
-            val jsonArray = if (root.has("sessions")) {
-                root.getJSONArray("sessions")
-            } else if (jsonString.trim().startsWith("[")) {
-                JSONArray(jsonString)
+            val trimmed = jsonString.trim()
+            val jsonArray = if (trimmed.startsWith("[")) {
+                JSONArray(trimmed)
             } else {
-                throw IllegalArgumentException("有効なセッションデータが見つかりませんでした")
+                val root = JSONObject(trimmed)
+                when {
+                    root.has("dailyRecords") -> root.getJSONArray("dailyRecords")
+                    root.has("records") -> root.getJSONArray("records")
+                    root.has("sessions") -> root.getJSONArray("sessions")
+                    else -> throw IllegalArgumentException("有効な作業データが見つかりませんでした")
+                }
             }
 
-            val list = mutableListOf<WorkSession>()
+            // 日付ごとに作業時間を集約
+            val importedDaily = mutableMapOf<String, Long>()
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
                 val date = obj.optString("date", "")
-                val duration = obj.optInt("durationSeconds", 0)
+                val duration = obj.optLong("durationSeconds", 0L).let {
+                    if (it == 0L) obj.optLong("seconds", 0L) else it
+                }
                 if (date.isNotBlank() && duration > 0) {
-                    list.add(
-                        WorkSession(
-                            id = 0, // Auto-generate IDs on import to avoid conflicts
-                            date = date,
-                            startTimeMillis = obj.optLong("startTimeMillis", System.currentTimeMillis()),
-                            durationSeconds = duration,
-                            sessionType = obj.optString("sessionType", "POMODORO"),
-                            note = obj.optString("note", "")
-                        )
-                    )
+                    importedDaily[date] = (importedDaily[date] ?: 0L) + duration
                 }
             }
 
@@ -117,11 +118,27 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
                 dao.clearAll()
             }
 
-            if (list.isNotEmpty()) {
-                dao.insertAll(list)
+            val listToInsert = importedDaily.map { (date, duration) ->
+                WorkSession(
+                    id = 0,
+                    date = date,
+                    startTimeMillis = System.currentTimeMillis(),
+                    durationSeconds = duration.toInt()
+                )
             }
 
-            list.size
+            if (listToInsert.isNotEmpty()) {
+                if (!clearExisting) {
+                    for (entry in listToInsert) {
+                        dao.deleteSessionsForDate(entry.date)
+                        dao.insert(entry)
+                    }
+                } else {
+                    dao.insertAll(listToInsert)
+                }
+            }
+
+            listToInsert.size
         }
     }
 }

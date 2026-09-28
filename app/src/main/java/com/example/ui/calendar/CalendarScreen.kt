@@ -72,7 +72,6 @@ fun CalendarScreen(
     var exportJsonText by remember { mutableStateOf("") }
     var showImportDialog by remember { mutableStateOf(false) }
     var importJsonText by remember { mutableStateOf("") }
-    var showSessionsDetailDialog by remember { mutableStateOf(false) }
     var showEditTimeDialog by remember { mutableStateOf(false) }
     var editingHours by remember { mutableIntStateOf(0) }
     var editingMinutes by remember { mutableIntStateOf(0) }
@@ -433,31 +432,7 @@ fun CalendarScreen(
                             }
                         }
 
-                        // Stable fixed-height Breakdown row (prevents UI height jump across date selections)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(36.dp),
-                            contentAlignment = Alignment.CenterEnd
-                        ) {
-                            if (sessionsForSelectedDate.isNotEmpty()) {
-                                TextButton(
-                                    onClick = { showSessionsDetailDialog = true },
-                                    modifier = Modifier.testTag("calendar_view_day_sessions_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.List,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "内訳 (${sessionsForSelectedDate.size}件)",
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-                            }
-                        }
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
                 }
             }
@@ -572,12 +547,12 @@ fun CalendarScreen(
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Text(
-                                        text = "総セッション数",
+                                        text = "作業日数",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        text = "${allSessions.size} 回",
+                                        text = "${datesWithWork.size} 日",
                                         style = MaterialTheme.typography.titleLarge.copy(
                                             fontWeight = FontWeight.Bold
                                         ),
@@ -598,96 +573,14 @@ fun CalendarScreen(
         }
     }
 
-    // Detail Sessions List Dialog
-    if (showSessionsDetailDialog) {
-        AlertDialog(
-            onDismissRequest = { showSessionsDetailDialog = false },
-            title = { Text("$selectedDate の作業履歴 (${sessionsForSelectedDate.size}件)") },
-            text = {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 300.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(sessionsForSelectedDate) { session ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                val (typeLabel, typeColor) = when (session.sessionType) {
-                                    "POMODORO" -> "ポモドーロ作業" to MaterialTheme.colorScheme.primary
-                                    "STOPWATCH" -> "ストップウォッチ" to MaterialTheme.colorScheme.secondary
-                                    "MANUAL" -> "手動追加" to MaterialTheme.colorScheme.tertiary
-                                    else -> session.sessionType to MaterialTheme.colorScheme.primary
-                                }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = typeLabel,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = typeColor
-                                    )
-                                    if (session.sessionType == "MANUAL") {
-                                        Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = MaterialTheme.colorScheme.tertiaryContainer
-                                        ) {
-                                            Text(
-                                                text = "手動調整",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                                val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
-                                val timingLabel = if (session.sessionType == "MANUAL") {
-                                    "手動追加 (${timeFormat.format(Date(session.startTimeMillis))})"
-                                } else {
-                                    "開始: ${timeFormat.format(Date(session.startTimeMillis))}"
-                                }
-                                Text(
-                                    text = "$timingLabel  |  時間: ${formatSecondsToHMS(session.durationSeconds.toLong())}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(
-                                onClick = { viewModel.deleteSession(session.id) },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "削除", tint = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSessionsDetailDialog = false }) {
-                    Text("閉じる")
-                }
-            }
-        )
-    }
-
     // Export Dialog
     if (showExportDialog) {
         AlertDialog(
             onDismissRequest = { showExportDialog = false },
-            title = { Text("JSONエクスポート完了") },
+            title = { Text("作業時間データのエクスポート") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("以下のJSONをコピーして保存してください:")
+                    Text("日付ごとの作業時間データ（JSON）です:")
                     OutlinedTextField(
                         value = exportJsonText,
                         onValueChange = {},
@@ -721,14 +614,14 @@ fun CalendarScreen(
     if (showImportDialog) {
         AlertDialog(
             onDismissRequest = { showImportDialog = false },
-            title = { Text("JSONインポート") },
+            title = { Text("作業時間データのインポート") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("エクスポートしたJSONデータを貼り付けてください:")
                     OutlinedTextField(
                         value = importJsonText,
                         onValueChange = { importJsonText = it },
-                        placeholder = { Text("{\n  \"sessions\": [...]\n}") },
+                        placeholder = { Text("{\n  \"dailyRecords\": [\n    {\"date\": \"2026-09-27\", \"durationSeconds\": 3600}\n  ]\n}") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(180.dp)
@@ -741,7 +634,7 @@ fun CalendarScreen(
                         coroutineScope.launch {
                             val result = viewModel.importDataFromJson(importJsonText)
                             result.onSuccess { count ->
-                                Toast.makeText(context, "${count}件のセッションをインポートしました", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "${count}日分のデータをインポートしました", Toast.LENGTH_SHORT).show()
                                 showImportDialog = false
                             }.onFailure { err ->
                                 Toast.makeText(context, "インポート失敗: ${err.message}", Toast.LENGTH_SHORT).show()
