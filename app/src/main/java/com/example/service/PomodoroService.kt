@@ -659,9 +659,10 @@ class PomodoroService : Service() {
         totalSets: Int,
         durationMins: Int
     ) {
+        val mmss = String.format(Locale.US, "%02d:00", durationMins)
         sendPushEventNotification(
             title = "休憩開始 [$currentSet/$totalSets]",
-            message = "${durationMins}分間の休憩"
+            message = "残り時間 $mmss"
         )
     }
 
@@ -670,9 +671,10 @@ class PomodoroService : Service() {
         totalSets: Int,
         durationMins: Int
     ) {
+        val mmss = String.format(Locale.US, "%02d:00", durationMins)
         sendPushEventNotification(
             title = "作業開始 [$currentSet/$totalSets]",
-            message = "${durationMins}分間の作業"
+            message = "残り時間 $mmss"
         )
     }
 
@@ -726,8 +728,9 @@ class PomodoroService : Service() {
             val stStatus = if (stopwatch.isPaused) " (一時停止中)" else ""
             val builder = NotificationCompat.Builder(this, CHANNEL_LIVE_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("ストップウォッチ")
-                .setContentText("${stopwatch.formattedTime}$stStatus")
+                .setContentTitle("ストップウォッチ - ${stopwatch.formattedTime}")
+                .setContentText("経過時間: ${stopwatch.formattedTime}$stStatus")
+                .setSubText(stopwatch.formattedTime)
                 .setContentIntent(contentIntent)
                 .setOngoing(stopwatch.isRunning)
                 .setShowWhen(false)
@@ -760,12 +763,13 @@ class PomodoroService : Service() {
             val status = if (state.isPaused) " (一時停止中)" else ""
             val otLabel = if (state.phase == PomodoroPhase.WORK) "作業継続中" else "休憩継続中"
             val otTitle = "$otLabel [${state.currentSet}/${state.totalSets}]"
-            val otText = "+${state.formattedOvertime}$status"
+            val otText = "超過時間: +${state.formattedOvertime}$status"
 
             val builder = NotificationCompat.Builder(this, CHANNEL_LIVE_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(otTitle)
+                .setContentTitle("$otTitle - +${state.formattedOvertime}")
                 .setContentText(otText)
+                .setSubText("+${state.formattedOvertime}")
                 .setContentIntent(contentIntent)
                 .setOngoing(state.isRunning || state.isPaused)
                 .setShowWhen(false)
@@ -809,12 +813,13 @@ class PomodoroService : Service() {
         val phaseLabel = if (state.phase == PomodoroPhase.WORK) "作業中" else "休憩中"
         val status = if (state.isPaused) " (一時停止中)" else ""
         val notifTitle = if (state.phase == PomodoroPhase.COMPLETED) "全セット完了" else "$phaseLabel [${state.currentSet}/${state.totalSets}]"
-        val notifText = if (state.phase == PomodoroPhase.COMPLETED) "お疲れ様でした" else "${state.formattedTime}$status"
+        val notifText = if (state.phase == PomodoroPhase.COMPLETED) "お疲れ様でした" else "残り時間: ${state.formattedTime}$status"
 
         val builder = NotificationCompat.Builder(this, CHANNEL_LIVE_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(notifTitle)
+            .setContentTitle(if (state.phase == PomodoroPhase.COMPLETED) notifTitle else "$notifTitle - 残り ${state.formattedTime}")
             .setContentText(notifText)
+            .setSubText(if (state.phase == PomodoroPhase.COMPLETED) null else state.formattedTime)
             .setContentIntent(contentIntent)
             .setOngoing(state.isRunning || state.isPaused)
             .setShowWhen(false)
