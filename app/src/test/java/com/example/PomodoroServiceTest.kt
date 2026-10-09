@@ -200,6 +200,8 @@ class PomodoroServiceTest {
     send(PomodoroService.ACTION_START)
     runFor(Duration.ofSeconds(25 * 60 + 1))
     assertEquals(PomodoroPhase.COMPLETED, timerState.phase)
+    // 完了後は常駐通知を残さない（サービスはアラート音が鳴り終わるまで残す）
+    assertTrue(shadowOf(controller.get()).isForegroundStopped)
     assertFalse(shadowOf(controller.get()).isStoppedBySelf)
 
     // 完了画面でクイックトグルを操作しても、完了状態のままサービスだけ取り残されない

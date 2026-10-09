@@ -89,20 +89,25 @@ class PomodoroService : Service() {
             ACTION_STOPWATCH_STOP -> stopStopwatch()
         }
 
-        if (isIdle()) {
-            try {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } catch (_: Exception) {}
-            stopSelf()
-        }
+        settleForegroundState()
         return START_NOT_STICKY
     }
 
-    private fun isIdle(): Boolean {
+    /** 計測中のものがなければフォアグラウンドをやめ、常駐通知を消してサービスを終える */
+    private fun settleForegroundState() {
         val timer = _timerState.value
         val stopwatch = _stopwatchState.value
-        return !timer.isActive && timer.phase != PomodoroPhase.COMPLETED &&
-            !stopwatch.isRunning && !stopwatch.isPaused
+        if (timer.isActive || stopwatch.isRunning || stopwatch.isPaused) return
+
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {}
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIFICATION_ID)
+
+        // 完了時のアラート音を最後まで鳴らすため、完了画面が閉じられるまではサービス自体は残す
+        if (timer.phase != PomodoroPhase.COMPLETED) {
+            stopSelf()
+        }
     }
 
     private fun startTimer() {
@@ -473,7 +478,8 @@ class PomodoroService : Service() {
             timeLeftSeconds = 0,
             overtimeSeconds = 0
         )
-        updateNotification()
+        // 完了後は常駐通知を残さず、完了のプッシュ通知だけにする（同じ内容の通知が2件並ぶのを防ぐ）
+        settleForegroundState()
         if (notify) {
             sendPushEventNotification(title = "全セット完了", message = "お疲れ様でした")
         }
@@ -722,7 +728,6 @@ class PomodoroService : Service() {
             )
         }
 
-        dismissEventNotification()
         cancelAlarm()
         serviceScope.cancel()
         soundManager.release()

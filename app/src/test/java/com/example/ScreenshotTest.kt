@@ -186,7 +186,9 @@ class ScreenshotTest {
     }
     composeTestRule.waitForIdle()
 
-    // 入力欄にフォーカスが当たるとカーソルの点滅でアイドルにならないため、時計を手動で進める
+    // Robolectric 上では、ダイアログを開いた時点で動いているアニメーション（ここでは入力欄のフォーカス遷移）が
+    // 完了扱いにならず待機が終わらないため、時計を手動で進める。エミュレータでは、ダイアログ表示中に
+    // 描画も CPU 使用も発生しないことを確認済み（.github/scripts/smoke.sh の MEASURE）
     composeTestRule.mainClock.autoAdvance = false
     composeTestRule.onNodeWithTag("setup_total_sets_value", useUnmergedTree = true).performClick()
     composeTestRule.mainClock.advanceTimeBy(1_000)
@@ -240,7 +242,7 @@ class ScreenshotTest {
     capture("${prefix}_06_edit_dialog")
     composeTestRule.onNodeWithText("キャンセル").performClick()
 
-    // メニューから開くダイアログは表示中にアイドルにならないため、閉じるまで時計を手動で進める
+    // メニューから開くダイアログも同じ理由（メニューを閉じるアニメーション）で、閉じるまで時計を手動で進める
     composeTestRule.onNodeWithTag("calendar_hamburger_menu_button").performClick()
     composeTestRule.waitForIdle()
     withManualClock {

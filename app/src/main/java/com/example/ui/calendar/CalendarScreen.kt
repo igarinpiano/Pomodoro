@@ -657,29 +657,35 @@ fun CalendarScreen(
                             .fillMaxWidth()
                             .heightIn(max = 240.dp)
                     )
-                }
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(
+                    OutlinedButton(
                         onClick = {
                             val stamp = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
                             exportFileLauncher.launch("pomodoro_$stamp.json")
                         },
-                        modifier = Modifier.testTag("export_save_file_button")
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("export_save_file_button")
                     ) {
+                        Icon(
+                            imageVector = Icons.Filled.Save,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text("ファイルに保存")
                     }
-                    Button(
-                        onClick = {
-                            clipboardManager.setText(AnnotatedString(exportJsonText))
-                            Toast.makeText(context, "クリップボードにコピーしました", Toast.LENGTH_SHORT).show()
-                            showExportDialog = false
-                        },
-                        modifier = Modifier.testTag("export_copy_button")
-                    ) {
-                        Text("コピー")
-                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(exportJsonText))
+                        Toast.makeText(context, "クリップボードにコピーしました", Toast.LENGTH_SHORT).show()
+                        showExportDialog = false
+                    },
+                    modifier = Modifier.testTag("export_copy_button")
+                ) {
+                    Text("コピー")
                 }
             },
             dismissButton = {

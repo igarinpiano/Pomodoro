@@ -244,11 +244,9 @@ fun StatisticsScreen(
         }
 
         // 5. 累計作業時間 (All-time Total Work Time)
-        val allTimeTotal: @Composable () -> Unit = {
+        val allTimeTotal: @Composable (Modifier) -> Unit = { totalModifier ->
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp, bottom = 24.dp),
+                modifier = totalModifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -293,11 +291,12 @@ fun StatisticsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .verticalScroll(rememberScrollState())
-                                .padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                                .padding(16.dp),
+                            // 横向きは高さが限られるので、スクロールなしで収まるよう余白を詰める
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             periodControls()
-                            allTimeTotal()
+                            allTimeTotal(Modifier)
                         }
                     }
                     StatsCard(
@@ -345,7 +344,7 @@ fun StatisticsScreen(
                     }
                 }
 
-                item { allTimeTotal() }
+                item { allTimeTotal(Modifier.padding(top = 8.dp, bottom = 24.dp)) }
             }
         }
     }
