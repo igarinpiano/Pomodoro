@@ -1,5 +1,6 @@
 package com.example.ui.statistics
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -8,7 +9,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -23,7 +26,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -31,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.model.StatsPeriod
-import com.example.model.WorkSession
 import com.example.viewmodel.PomodoroViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -45,251 +50,324 @@ fun StatisticsScreen(
 ) {
     BackHandler { onBack() }
 
-    val allSessions by viewModel.allSessions.collectAsStateWithLifecycle()
+    val dailyWorkSeconds by viewModel.dailyWorkSeconds.collectAsStateWithLifecycle()
     val totalAllTimeSeconds by viewModel.totalWorkSeconds.collectAsStateWithLifecycle()
     val statsPeriod by viewModel.statsPeriod.collectAsStateWithLifecycle()
     val periodOffset by viewModel.statsPeriodOffset.collectAsStateWithLifecycle()
     val selectedBarIndex by viewModel.selectedBarIndex.collectAsStateWithLifecycle()
 
     // Compute period dates & data based on period and offset
-    val periodData = remember(allSessions, statsPeriod, periodOffset) {
-        computeStatsData(allSessions, statsPeriod, periodOffset)
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    val periodData = remember(dailyWorkSeconds, statsPeriod, periodOffset) {
+        computeStatsData(dailyWorkSeconds, statsPeriod, periodOffset)
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.statusBars,
+        contentWindowInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout),
         modifier = modifier
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Top Header: < カレンダーに戻る
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+        // Top Header: < カレンダーに戻る
+        val backHeader: @Composable () -> Unit = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = onBack,
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.testTag("stats_back_button")
                 ) {
-                    TextButton(
-                        onClick = onBack,
-                        contentPadding = PaddingValues(0.dp),
-                        modifier = Modifier.testTag("stats_back_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "戻る",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "カレンダーに戻る",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                }
-            }
-
-            // Main Statistics Card
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("statistics_card"),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // 1. Period Selector Segmented Switch: [ 週 ] [ 月 ] [ 年 ]
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp)
-                                .clip(RoundedCornerShape(22.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-                                .padding(3.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            StatsPeriod.entries.forEach { period ->
-                                val isSelected = statsPeriod == period
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                        .clip(RoundedCornerShape(20.dp))
-                                        .background(
-                                            if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                            else Color.Transparent
-                                        )
-                                        .clickable {
-                                            viewModel.setStatsPeriod(period)
-                                        }
-                                        .testTag("stats_tab_${period.name.lowercase()}"),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = period.label,
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                        ),
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-
-                        // 2. Navigation Row: < 2026/08/30~2026/09/05 >
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = { viewModel.shiftStatsPeriod(-1) },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .testTag("stats_prev_period")
-                            ) {
-                                Icon(Icons.Filled.ChevronLeft, contentDescription = "前へ")
-                            }
-
-                            Text(
-                                text = periodData.periodLabel,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            IconButton(
-                                onClick = { viewModel.shiftStatsPeriod(1) },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .testTag("stats_next_period")
-                            ) {
-                                Icon(Icons.Filled.ChevronRight, contentDescription = "次へ")
-                            }
-                        }
-
-                        // 3. 作業時間合計 (Period Total)
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "作業時間合計",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = formatSecondsToHMS(periodData.totalSeconds),
-                                style = MaterialTheme.typography.headlineMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.testTag("stats_period_total_time")
-                            )
-                        }
-
-                        // 4. Interactive Bar Chart with Grid and Tooltip
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(260.dp)
-                                .padding(vertical = 8.dp)
-                                .testTag("stats_bar_chart_container")
-                        ) {
-                            BarChartView(
-                                items = periodData.items,
-                                maxSeconds = periodData.maxSeconds,
-                                selectedIndex = selectedBarIndex,
-                                onSelectIndex = { viewModel.selectBar(it) }
-                            )
-
-                            // Tooltip Box when a bar is selected (Screenshot 3 style!)
-                            selectedBarIndex?.let { index ->
-                                if (index in periodData.items.indices) {
-                                    val item = periodData.items[index]
-                                    Card(
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = MaterialTheme.colorScheme.surface
-                                        ),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                                        modifier = Modifier
-                                            .align(Alignment.TopCenter)
-                                            .border(
-                                                width = 1.5.dp,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                shape = RoundedCornerShape(10.dp)
-                                            )
-                                            .testTag("stats_selected_bar_tooltip")
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Text(
-                                                text = item.fullDateLabel,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Text(
-                                                text = formatSecondsToHMS(item.seconds),
-                                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 5. Bottom: 総作業時間 (All-time Total Work Time)
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp, bottom = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "総作業時間",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "戻る",
+                        tint = MaterialTheme.colorScheme.onBackground
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = formatSecondsToHMS(totalAllTimeSeconds),
-                        fontSize = 38.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        letterSpacing = 2.sp,
-                        modifier = Modifier.testTag("stats_all_time_total")
+                        text = "カレンダーに戻る",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                 }
             }
         }
+
+        val periodControls: @Composable () -> Unit = {
+            // 1. Period Selector Segmented Switch: [ 週 ] [ 月 ] [ 年 ]
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                StatsPeriod.entries.forEach { period ->
+                    val isSelected = statsPeriod == period
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                else Color.Transparent
+                            )
+                            .clickable {
+                                viewModel.setStatsPeriod(period)
+                            }
+                            .testTag("stats_tab_${period.name.lowercase()}"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = period.label,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            ),
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // 2. Navigation Row: < 2026/08/30~2026/09/05 >
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { viewModel.shiftStatsPeriod(-1) },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("stats_prev_period")
+                ) {
+                    Icon(Icons.Filled.ChevronLeft, contentDescription = "前へ")
+                }
+
+                Text(
+                    text = periodData.periodLabel,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                IconButton(
+                    onClick = { viewModel.shiftStatsPeriod(1) },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("stats_next_period")
+                ) {
+                    Icon(Icons.Filled.ChevronRight, contentDescription = "次へ")
+                }
+            }
+
+            // 3. 作業時間合計 (Period Total)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "作業時間合計",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = formatSecondsToHMS(periodData.totalSeconds),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.testTag("stats_period_total_time")
+                )
+            }
+        }
+
+        // 4. Interactive Bar Chart with Grid and Tooltip
+        val chart: @Composable (Modifier) -> Unit = { chartModifier ->
+            Box(
+                modifier = chartModifier
+                    .padding(vertical = 8.dp)
+                    .testTag("stats_bar_chart_container")
+            ) {
+                BarChartView(
+                    items = periodData.items,
+                    maxSeconds = periodData.maxSeconds,
+                    selectedIndex = selectedBarIndex,
+                    onSelectIndex = { viewModel.selectBar(it) }
+                )
+
+                // Tooltip Box when a bar is selected (Screenshot 3 style!)
+                selectedBarIndex?.let { index ->
+                    if (index in periodData.items.indices) {
+                        val item = periodData.items[index]
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .border(
+                                    width = 1.5.dp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .testTag("stats_selected_bar_tooltip")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = item.fullDateLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = formatSecondsToHMS(item.seconds),
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. 累計作業時間 (All-time Total Work Time)
+        val allTimeTotal: @Composable () -> Unit = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "累計作業時間",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = formatSecondsToHMS(totalAllTimeSeconds),
+                    fontSize = 38.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    letterSpacing = 2.sp,
+                    modifier = Modifier.testTag("stats_all_time_total")
+                )
+            }
+        }
+
+        val contentModifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+
+        if (isLandscape) {
+            // 横向き: 左に期間の切り替えと合計、右にグラフを画面の高さいっぱいに表示する
+            Column(
+                modifier = contentModifier,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                backHeader()
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    StatsCard(
+                        modifier = Modifier
+                            .weight(0.42f)
+                            .fillMaxHeight()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            periodControls()
+                            allTimeTotal()
+                        }
+                    }
+                    StatsCard(
+                        modifier = Modifier
+                            .weight(0.58f)
+                            .fillMaxHeight()
+                            .testTag("statistics_card")
+                    ) {
+                        chart(
+                            Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp)
+                        )
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = contentModifier,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                item { backHeader() }
+
+                // Main Statistics Card
+                item {
+                    StatsCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("statistics_card")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            periodControls()
+                            chart(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(260.dp)
+                            )
+                        }
+                    }
+                }
+
+                item { allTimeTotal() }
+            }
+        }
     }
 }
+
+@Composable
+private fun StatsCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        content = content
+    )
+}
+
+private const val GRID_STEPS = 4
 
 @Composable
 private fun BarChartView(
@@ -301,129 +379,144 @@ private fun BarChartView(
     val barColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
     val selectedBarColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-    val textMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    // ライト／ダークどちらのテーマでも読めるよう、ラベルはテーマの色で描く
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+    val selectedLabelColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val currentOnSelectIndex by rememberUpdatedState(onSelectIndex)
 
-    // Determine Y-axis max ceiling: at least 4 hours (14400s) or rounded up to nearest 1-2 hours
-    val yCeilingSeconds = remember(maxSeconds) {
-        val baseHours = max(1L, (maxSeconds + 3599) / 3600)
-        max(4L, baseHours) * 3600L
+    // Y軸の上限は最低4時間。目盛りがちょうど「時間」単位になるよう4時間刻みに切り上げる
+    val yCeilingHours = remember(maxSeconds) {
+        val hours = max(4L, (maxSeconds + 3599) / 3600)
+        ((hours + GRID_STEPS - 1) / GRID_STEPS) * GRID_STEPS
     }
+    val yCeilingSeconds = yCeilingHours * 3600L
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val width = constraints.maxWidth.toFloat()
-        val height = constraints.maxHeight.toFloat()
+    // 寸法は dp / sp から求め、画面密度や文字サイズの設定が違っても崩れないようにする
+    val density = LocalDensity.current
+    val textSize = with(density) { 9.sp.toPx() }
+    val smallTextSize = with(density) { 7.5.sp.toPx() }
+    val axisLabelGap = with(density) { 4.dp.toPx() }
+    val barLabelGap = with(density) { 2.dp.toPx() }
+    val minBarWidth = with(density) { 2.dp.toPx() }
+    val tapSlop = with(density) { 8.dp.toPx() }
+    val bottomMargin = textSize * 2.4f + with(density) { 10.dp.toPx() }
 
-        // Reserve space for Y-axis labels on left (approx 42dp) and bottom for X labels (approx 36dp)
-        val leftMargin = 110f
-        val bottomMargin = 85f
-        val chartAreaWidth = width - leftMargin
-        val chartAreaHeight = height - bottomMargin
+    val axisPaint = remember {
+        android.graphics.Paint().apply {
+            textAlign = android.graphics.Paint.Align.RIGHT
+            isAntiAlias = true
+        }
+    }
+    val barLabelPaint = remember {
+        android.graphics.Paint().apply {
+            textAlign = android.graphics.Paint.Align.CENTER
+            isAntiAlias = true
+        }
+    }
+    axisPaint.textSize = textSize
+    val leftMargin = max(
+        with(density) { 42.dp.toPx() },
+        axisPaint.measureText(formatAxisHours(yCeilingHours)) + axisLabelGap * 3f
+    )
 
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(items) {
-                    detectTapGestures { offset ->
-                        if (offset.x >= leftMargin && offset.x <= width && offset.y <= chartAreaHeight + 20f) {
-                            val relX = offset.x - leftMargin
-                            val colWidth = chartAreaWidth / items.size.coerceAtLeast(1)
-                            val idx = (relX / colWidth).toInt().coerceIn(0, items.size - 1)
-                            onSelectIndex(idx)
-                        }
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(items.size, leftMargin, bottomMargin) {
+                detectTapGestures { offset ->
+                    val chartAreaWidth = size.width - leftMargin
+                    val chartAreaHeight = size.height - bottomMargin
+                    if (items.isNotEmpty() && offset.x >= leftMargin && offset.y <= chartAreaHeight + tapSlop) {
+                        val colWidth = chartAreaWidth / items.size
+                        val idx = ((offset.x - leftMargin) / colWidth).toInt().coerceIn(0, items.size - 1)
+                        currentOnSelectIndex(idx)
                     }
                 }
-        ) {
-            // Draw horizontal grid lines and Y-axis labels (00:00, 01:00, ...)
-            val gridSteps = 4
-            for (i in 0..gridSteps) {
-                val ratio = i.toFloat() / gridSteps
-                val y = chartAreaHeight * (1f - ratio)
-                val secsForLine = (yCeilingSeconds * ratio).toLong()
-                val h = secsForLine / 3600
-                val label = String.format(Locale.US, "%02d:00", h)
+            }
+    ) {
+        val width = size.width
+        val chartAreaWidth = width - leftMargin
+        val chartAreaHeight = size.height - bottomMargin
+        val nativeCanvas = drawContext.canvas.nativeCanvas
 
-                // Grid line
-                drawLine(
-                    color = gridColor,
-                    start = Offset(leftMargin, y),
-                    end = Offset(width, y),
-                    strokeWidth = 1.dp.toPx()
+        // Draw horizontal grid lines and Y-axis labels (00:00, 01:00, ...)
+        axisPaint.color = labelColor
+        for (i in 0..GRID_STEPS) {
+            val y = chartAreaHeight * (1f - i.toFloat() / GRID_STEPS)
+
+            drawLine(
+                color = gridColor,
+                start = Offset(leftMargin, y),
+                end = Offset(width, y),
+                strokeWidth = 1.dp.toPx()
+            )
+            nativeCanvas.drawText(
+                formatAxisHours(yCeilingHours * i / GRID_STEPS),
+                leftMargin - axisLabelGap,
+                y + textSize / 3f,
+                axisPaint
+            )
+        }
+
+        if (items.isEmpty()) return@Canvas
+
+        // Draw bars
+        val colWidth = chartAreaWidth / items.size
+        val barWidth = (colWidth * 0.65f).coerceAtLeast(minBarWidth)
+        val highlightInset = 1.dp.toPx()
+        // 年表示（12本）までは全ラベルが収まる。月表示は重ならないよう7日おきに間引く
+        val showAllLabels = items.size <= 12
+        barLabelPaint.textSize = if (items.size > 14) smallTextSize else textSize
+
+        items.forEachIndexed { index, item ->
+            val barHeight =
+                ((item.seconds.toFloat() / yCeilingSeconds.toFloat()) * chartAreaHeight).coerceAtMost(chartAreaHeight)
+
+            val x = leftMargin + (index * colWidth) + ((colWidth - barWidth) / 2f)
+            val y = chartAreaHeight - barHeight
+
+            val isSelected = selectedIndex == index
+
+            // Bar rectangle with rounded top corners
+            if (barHeight > 0f) {
+                drawRoundRect(
+                    color = if (isSelected) selectedBarColor else barColor,
+                    topLeft = Offset(x, y),
+                    size = Size(barWidth, barHeight),
+                    cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
                 )
 
-                // Y-axis text
-                drawContext.canvas.nativeCanvas.apply {
-                    val paint = android.graphics.Paint().apply {
-                        color = android.graphics.Color.GRAY
-                        textSize = 24f
-                        textAlign = android.graphics.Paint.Align.RIGHT
-                        isAntiAlias = true
-                    }
-                    drawText(label, leftMargin - 12f, y + 8f, paint)
+                if (isSelected) {
+                    // Highlight border
+                    drawRoundRect(
+                        color = Color(0xFF00E5FF), // glowing cyan highlight
+                        topLeft = Offset(x - highlightInset, y - highlightInset),
+                        size = Size(barWidth + highlightInset * 2f, barHeight + highlightInset),
+                        cornerRadius = CornerRadius(7.dp.toPx(), 7.dp.toPx()),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+                    )
                 }
             }
 
-            if (items.isEmpty()) return@Canvas
-
-            // Draw bars
-            val colWidth = chartAreaWidth / items.size
-            val barWidth = (colWidth * 0.65f).coerceAtLeast(6f)
-
-            items.forEachIndexed { index, item ->
-                val barHeight = if (yCeilingSeconds > 0) {
-                    ((item.seconds.toFloat() / yCeilingSeconds.toFloat()) * chartAreaHeight).coerceAtMost(chartAreaHeight)
-                } else 0f
-
-                val x = leftMargin + (index * colWidth) + ((colWidth - barWidth) / 2f)
-                val y = chartAreaHeight - barHeight
-
-                val isSelected = selectedIndex == index
-
-                // Bar rectangle with rounded top corners
-                if (barHeight > 0f) {
-                    drawRoundRect(
-                        color = if (isSelected) selectedBarColor else barColor,
-                        topLeft = Offset(x, y),
-                        size = Size(barWidth, barHeight),
-                        cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
+            // X-axis label (e.g. "30\n(日)" for days, "9月" for months)
+            val isLastWithRoom = index == items.lastIndex && index % 7 >= 3
+            if (showAllLabels || isSelected || index % 7 == 0 || isLastWithRoom) {
+                barLabelPaint.color = if (isSelected) selectedLabelColor else labelColor
+                barLabelPaint.isFakeBoldText = isSelected
+                item.shortLabel.split("\n").forEachIndexed { lineIdx, line ->
+                    nativeCanvas.drawText(
+                        line,
+                        x + (barWidth / 2f),
+                        chartAreaHeight + barLabelGap + textSize * (1f + lineIdx * 1.05f),
+                        barLabelPaint
                     )
-
-                    if (isSelected) {
-                        // Highlight border
-                        drawRoundRect(
-                            color = Color(0xFF00E5FF), // glowing cyan highlight
-                            topLeft = Offset(x - 2f, y - 2f),
-                            size = Size(barWidth + 4f, barHeight + 2f),
-                            cornerRadius = CornerRadius(7.dp.toPx(), 7.dp.toPx()),
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
-                        )
-                    }
-                }
-
-                // X-axis label (Day and day of week)
-                // For weekly: show both lines e.g. "30\n(日)"
-                // For monthly: show every 7th day or selected
-                val shouldShowLabel = items.size <= 7 || index % 7 == 0 || index == items.size - 1 || isSelected
-                if (shouldShowLabel) {
-                    val labelText = item.shortLabel
-                    val lines = labelText.split("\n")
-                    lines.forEachIndexed { lineIdx, line ->
-                        drawContext.canvas.nativeCanvas.apply {
-                            val paint = android.graphics.Paint().apply {
-                                color = if (isSelected) android.graphics.Color.WHITE else android.graphics.Color.LTGRAY
-                                textSize = if (items.size > 14) 20f else 24f
-                                textAlign = android.graphics.Paint.Align.CENTER
-                                isFakeBoldText = isSelected
-                                isAntiAlias = true
-                            }
-                            drawText(line, x + (barWidth / 2f), chartAreaHeight + 28f + (lineIdx * 24f), paint)
-                        }
-                    }
                 }
             }
         }
     }
 }
+
+private fun formatAxisHours(hours: Long): String = String.format(Locale.US, "%02d:00", hours)
 
 private data class ChartBarItem(
     val shortLabel: String,
@@ -439,7 +532,7 @@ private data class PeriodStats(
 )
 
 private fun computeStatsData(
-    sessions: List<WorkSession>,
+    dailyWorkSeconds: Map<String, Long>,
     period: StatsPeriod,
     offset: Int
 ): PeriodStats {
@@ -471,7 +564,7 @@ private fun computeStatsData(
                 val dayOfMonth = currentCal.get(Calendar.DAY_OF_MONTH)
                 val dayOfWeek = dayOfWeekNames[i]
 
-                val daySecs = sessions.filter { it.date == key }.sumOf { it.durationSeconds.toLong() }
+                val daySecs = dailyWorkSeconds[key] ?: 0L
                 totalPeriodSecs += daySecs
                 if (daySecs > maxPeriodSecs) maxPeriodSecs = daySecs
 
@@ -489,7 +582,7 @@ private fun computeStatsData(
             val endDateStr = weekDateFormat.format(endCal.time)
 
             PeriodStats(
-                periodLabel = "$startDateStr~$endDateStr",
+                periodLabel = "$startDateStr〜$endDateStr",
                 totalSeconds = totalPeriodSecs,
                 maxSeconds = maxPeriodSecs,
                 items = items
@@ -515,7 +608,7 @@ private fun computeStatsData(
                 currentCal.set(Calendar.DAY_OF_MONTH, day)
                 val key = dayKeyFormat.format(currentCal.time)
 
-                val daySecs = sessions.filter { it.date == key }.sumOf { it.durationSeconds.toLong() }
+                val daySecs = dailyWorkSeconds[key] ?: 0L
                 totalPeriodSecs += daySecs
                 if (daySecs > maxPeriodSecs) maxPeriodSecs = daySecs
 
@@ -538,15 +631,25 @@ private fun computeStatsData(
         StatsPeriod.YEAR -> {
             cal.add(Calendar.YEAR, offset)
             val year = cal.get(Calendar.YEAR)
-            val yearLabel = "$year"
+            val yearLabel = "${year}年"
+
+            val monthTotals = LongArray(12)
+            val yearPrefix = String.format(Locale.US, "%04d-", year)
+            dailyWorkSeconds.forEach { (date, secs) ->
+                if (date.startsWith(yearPrefix)) {
+                    val month = date.drop(yearPrefix.length).take(2).toIntOrNull()
+                    if (month != null && month in 1..12) {
+                        monthTotals[month - 1] += secs
+                    }
+                }
+            }
 
             val items = mutableListOf<ChartBarItem>()
             var totalPeriodSecs = 0L
             var maxPeriodSecs = 0L
 
             for (m in 1..12) {
-                val prefix = String.format(Locale.US, "%04d-%02d", year, m)
-                val monthSecs = sessions.filter { it.date.startsWith(prefix) }.sumOf { it.durationSeconds.toLong() }
+                val monthSecs = monthTotals[m - 1]
                 totalPeriodSecs += monthSecs
                 if (monthSecs > maxPeriodSecs) maxPeriodSecs = monthSecs
 

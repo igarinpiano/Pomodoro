@@ -8,6 +8,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
+import com.example.R
 
 /**
  * サウンド再生とバイブレーションを管理するクラス
@@ -20,16 +21,10 @@ class SoundManager(private val context: Context) {
      * 通知音（鳩時計）を再生する
      * 設計方針:
      * 1. USAGE_MEDIA を使用し、通常のサウンドとして再生する（アラームではない）
-     * 2. ファイルが存在しない場合は何もしない（安全性の確保）
-     * 3. 再生完了後に適切にリソースを解放する
+     * 2. 再生完了後に適切にリソースを解放する
      */
     fun playAlertSound() {
-        // サウンドファイル(res/raw/alert.*)が存在するか確認
-        val resId = context.resources.getIdentifier("alert", "raw", context.packageName)
-        if (resId == 0) {
-            Log.d("SoundManager", "Sound resource 'alert' not found in res/raw. Skipping playback.")
-            return
-        }
+        val resId = R.raw.alert
 
         try {
             // 既存の再生があれば停止して解放

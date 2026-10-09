@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -23,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.model.AppScreen
+import com.example.model.PomodoroSettings
 import com.example.model.TimerMode
 import com.example.ui.calendar.CalendarScreen
 import com.example.ui.components.SettingsSheet
@@ -114,258 +118,128 @@ private fun MainTimerView(
 
     val isAnyTimerActive = (timerState.isRunning || timerState.isPaused || timerState.overtimeSeconds > 0) ||
                            (stopwatchState.isRunning || stopwatchState.isPaused || stopwatchState.elapsedSeconds > 0)
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.statusBars,
+        // ナビゲーションバー（3ボタン式）や横向き時のカメラ切り欠きにボタンが重ならないようにする
+        contentWindowInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout),
         modifier = modifier
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 24.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Header: Title and Calendar Icon Button on Top-Right
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp, bottom = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "ポモドーロタイマー",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground
+        val contentModifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 24.dp, vertical = 10.dp)
+
+        // Main Display Circle (Either Pomodoro or Stopwatch)
+        val timerDisplay: @Composable () -> Unit = {
+            if (timerMode == TimerMode.POMODORO) {
+                TimerCircleDisplay(
+                    timerState = timerState,
+                    onStart = {
+                        if (timerState.settings.flashEnabled && !hasCameraPermission) {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                        viewModel.startTimer(context)
+                    },
+                    onPause = { viewModel.pauseTimer(context) },
+                    onResume = { viewModel.resumeTimer(context) },
+                    onSkip = { viewModel.skipSet(context) },
+                    onStop = { viewModel.stopTimer(context) },
+                    onNextPhase = { viewModel.nextPhase(context) },
+                    onUpdateWorkMins = { viewModel.updateInlineSettings(context, workMins = it) },
+                    onUpdateBreakMins = { viewModel.updateInlineSettings(context, breakMins = it) },
+                    onUpdateTotalSets = { viewModel.updateInlineSettings(context, totalSets = it) }
                 )
-
-                IconButton(
-                    onClick = onOpenCalendar,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = CircleShape
-                        )
-                        .testTag("header_calendar_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.CalendarMonth,
-                        contentDescription = "カレンダー・統計",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+            } else {
+                StopwatchCircleDisplay(
+                    stopwatchState = stopwatchState,
+                    onStart = { viewModel.startStopwatch(context) },
+                    onPause = { viewModel.pauseStopwatch(context) },
+                    onStop = { viewModel.stopStopwatch(context) }
+                )
             }
+        }
+        val modeSelector: @Composable (Modifier) -> Unit = { selectorModifier ->
+            ModeSelector(
+                timerMode = timerMode,
+                isAnyTimerActive = isAnyTimerActive,
+                onSelectMode = { viewModel.setTimerMode(it) },
+                modifier = selectorModifier
+            )
+        }
+        val bottomActions: @Composable (Modifier) -> Unit = { actionsModifier ->
+            BottomActions(
+                settings = timerState.settings,
+                onOpenSettings = { showSettingsSheet = true },
+                onToggleSound = { viewModel.toggleQuickSound(context) },
+                onToggleVibrate = { viewModel.toggleQuickVibrate(context) },
+                onToggleFlash = { viewModel.toggleQuickFlash(context) },
+                modifier = actionsModifier
+            )
+        }
 
-            // Center Area: Mode Selector and Timer Circle Display centered together
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+        if (isLandscape) {
+            // 横向き: 左にタイマーの円、右にタイトル・モード切り替え・各種ボタンを並べる
+            Row(
+                modifier = contentModifier,
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                // Mode Selector Pill: [ ポモドーロタイマー ] [ ストップウォッチ ]
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth(0.88f)
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(
-                            if (isAnyTimerActive) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f)
-                            else MaterialTheme.colorScheme.surfaceContainerHigh
-                        )
-                        .padding(3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    TimerMode.entries.forEach { mode ->
-                        val isSelected = timerMode == mode
-                        val tabBackground = when {
-                            isSelected && isAnyTimerActive -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f)
-                            isSelected -> MaterialTheme.colorScheme.primaryContainer
-                            else -> Color.Transparent
-                        }
-                        val textColor = when {
-                            isAnyTimerActive && isSelected -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            isAnyTimerActive -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                            isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(tabBackground)
-                                .clickable(enabled = !isAnyTimerActive) {
-                                    viewModel.setTimerMode(mode)
-                                }
-                                .testTag("mode_tab_${mode.name.lowercase()}"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = mode.label,
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                ),
-                                color = textColor
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Main Display Circle (Either Pomodoro or Stopwatch)
                 Box(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (timerMode == TimerMode.POMODORO) {
-                        TimerCircleDisplay(
-                            timerState = timerState,
-                            onStart = {
-                                if (timerState.settings.flashEnabled && !hasCameraPermission) {
-                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                                }
-                                viewModel.startTimer(context)
-                            },
-                            onPause = { viewModel.pauseTimer(context) },
-                            onResume = { viewModel.resumeTimer(context) },
-                            onSkip = { viewModel.skipSet(context) },
-                            onStop = { viewModel.stopTimer(context) },
-                            onNextPhase = { viewModel.nextPhase(context) },
-                            onUpdateWorkMins = { viewModel.updateInlineSettings(context, workMins = it) },
-                            onUpdateBreakMins = { viewModel.updateInlineSettings(context, breakMins = it) },
-                            onUpdateTotalSets = { viewModel.updateInlineSettings(context, totalSets = it) }
-                        )
-                    } else {
-                        StopwatchCircleDisplay(
-                            stopwatchState = stopwatchState,
-                            onStart = { viewModel.startStopwatch(context) },
-                            onPause = { viewModel.pauseStopwatch(context) },
-                            onStop = { viewModel.stopStopwatch(context) }
-                        )
+                    timerDisplay()
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    MainHeader(onOpenCalendar = onOpenCalendar)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        modeSelector(Modifier.fillMaxWidth())
                     }
+                    bottomActions(Modifier)
                 }
             }
-
-            // Bottom Actions: Settings on left, Quick Toggles on right
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        } else {
+            Column(
+                modifier = contentModifier,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Bottom Left: Settings Button
-                IconButton(
-                    onClick = { showSettingsSheet = true },
+                MainHeader(onOpenCalendar = onOpenCalendar)
+
+                // Center Area: Mode Selector and Timer Circle Display centered together
+                Column(
                     modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = CircleShape
-                        )
-                        .testTag("footer_settings_button")
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = "設定",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    modeSelector(Modifier.fillMaxWidth(0.88f))
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        timerDisplay()
+                    }
                 }
 
-                // Bottom Right: Horizontal 3 Notification Toggles (Sound / Vibrate / Light)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // 1. Sound (Speaker icon)
-                    IconButton(
-                        onClick = { viewModel.toggleQuickSound(context) },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                color = if (timerState.settings.soundEnabled) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                                },
-                                shape = CircleShape
-                            )
-                            .testTag("footer_sound_button")
-                    ) {
-                        Icon(
-                            imageVector = if (timerState.settings.soundEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
-                            contentDescription = "サウンド切り替え",
-                            tint = if (timerState.settings.soundEnabled) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-
-                    // 2. Vibrate
-                    IconButton(
-                        onClick = { viewModel.toggleQuickVibrate(context) },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                color = if (timerState.settings.vibrateEnabled) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                                },
-                                shape = CircleShape
-                            )
-                            .testTag("footer_vibrate_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Vibration,
-                            contentDescription = "バイブ切り替え",
-                            tint = if (timerState.settings.vibrateEnabled) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-
-                    // 3. Light (Flash)
-                    IconButton(
-                        onClick = { viewModel.toggleQuickFlash(context) },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                color = if (timerState.settings.flashEnabled) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                                },
-                                shape = CircleShape
-                            )
-                            .testTag("footer_flash_button")
-                    ) {
-                        Icon(
-                            imageVector = if (timerState.settings.flashEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
-                            contentDescription = "ライト切り替え",
-                            tint = if (timerState.settings.flashEnabled) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-                }
+                bottomActions(Modifier.padding(bottom = 12.dp))
             }
         }
 
@@ -379,5 +253,196 @@ private fun MainTimerView(
                 onDismissRequest = { showSettingsSheet = false }
             )
         }
+    }
+}
+
+// Header: Title and Calendar Icon Button on Top-Right
+@Composable
+private fun MainHeader(onOpenCalendar: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp, bottom = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "ポモドーロタイマー",
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp
+            ),
+            color = MaterialTheme.colorScheme.onBackground
+        )
+
+        IconButton(
+            onClick = onOpenCalendar,
+            modifier = Modifier
+                .size(44.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = CircleShape
+                )
+                .testTag("header_calendar_button")
+        ) {
+            Icon(
+                imageVector = Icons.Filled.CalendarMonth,
+                contentDescription = "カレンダー・統計",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    }
+}
+
+// Mode Selector Pill: [ ポモドーロタイマー ] [ ストップウォッチ ]
+@Composable
+private fun ModeSelector(
+    timerMode: TimerMode,
+    isAnyTimerActive: Boolean,
+    onSelectMode: (TimerMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .height(40.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                if (isAnyTimerActive) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f)
+                else MaterialTheme.colorScheme.surfaceContainerHigh
+            )
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        TimerMode.entries.forEach { mode ->
+            val isSelected = timerMode == mode
+            val tabBackground = when {
+                isSelected && isAnyTimerActive -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f)
+                isSelected -> MaterialTheme.colorScheme.primaryContainer
+                else -> Color.Transparent
+            }
+            val textColor = when {
+                isAnyTimerActive && isSelected -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                isAnyTimerActive -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(tabBackground)
+                    .clickable(enabled = !isAnyTimerActive) {
+                        onSelectMode(mode)
+                    }
+                    .testTag("mode_tab_${mode.name.lowercase()}"),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = mode.label,
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    ),
+                    color = textColor
+                )
+            }
+        }
+    }
+}
+
+// Bottom Actions: Settings on left, Quick Toggles (Sound / Vibrate / Light) on right
+@Composable
+private fun BottomActions(
+    settings: PomodoroSettings,
+    onOpenSettings: () -> Unit,
+    onToggleSound: () -> Unit,
+    onToggleVibrate: () -> Unit,
+    onToggleFlash: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = onOpenSettings,
+            modifier = Modifier
+                .size(48.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = CircleShape
+                )
+                .testTag("footer_settings_button")
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Settings,
+                contentDescription = "設定",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            QuickToggleButton(
+                enabled = settings.soundEnabled,
+                icon = if (settings.soundEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                contentDescription = "サウンド切り替え",
+                testTag = "footer_sound_button",
+                onClick = onToggleSound
+            )
+            QuickToggleButton(
+                enabled = settings.vibrateEnabled,
+                icon = Icons.Filled.Vibration,
+                contentDescription = "バイブ切り替え",
+                testTag = "footer_vibrate_button",
+                onClick = onToggleVibrate
+            )
+            QuickToggleButton(
+                enabled = settings.flashEnabled,
+                icon = if (settings.flashEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
+                contentDescription = "ライト切り替え",
+                testTag = "footer_flash_button",
+                onClick = onToggleFlash
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickToggleButton(
+    enabled: Boolean,
+    icon: ImageVector,
+    contentDescription: String,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(48.dp)
+            .background(
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                },
+                shape = CircleShape
+            )
+            .testTag(testTag)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
     }
 }

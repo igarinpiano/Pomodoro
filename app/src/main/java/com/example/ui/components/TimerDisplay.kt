@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.PomodoroPhase
@@ -46,6 +48,40 @@ const val MAX_BREAK_MINUTES = 60
 const val MAX_TOTAL_SETS = 12
 
 private enum class EditDialogType { NONE, SETS, WORK, BREAK }
+
+private val CIRCLE_DESIGN_SIZE = 310.dp
+
+/**
+ * 円の中身は 310dp を基準にレイアウトしているため、それより狭い場合（横向き・分割画面・小型端末）は
+ * 中身ごと等倍で縮小し、ボタンや文字がはみ出さないようにする。
+ */
+@Composable
+private fun CircleContainer(
+    testTag: String,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .sizeIn(maxWidth = CIRCLE_DESIGN_SIZE, maxHeight = CIRCLE_DESIGN_SIZE)
+            .aspectRatio(1f)
+            .testTag(testTag),
+        contentAlignment = Alignment.Center
+    ) {
+        val density = LocalDensity.current
+        val scale = (minOf(maxWidth, maxHeight) / CIRCLE_DESIGN_SIZE).coerceIn(0.1f, 1f)
+        val scaledDensity = remember(density, scale) {
+            Density(density.density * scale, density.fontScale)
+        }
+        CompositionLocalProvider(LocalDensity provides scaledDensity) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+                content = content
+            )
+        }
+    }
+}
 
 @Composable
 fun TimerCircleDisplay(
@@ -78,12 +114,9 @@ fun TimerCircleDisplay(
         label = "GaugeProgress"
     )
 
-    Box(
+    CircleContainer(
+        testTag = "timer_circle_container",
         modifier = modifier
-            .sizeIn(maxWidth = 310.dp, maxHeight = 310.dp)
-            .aspectRatio(1f)
-            .testTag("timer_circle_container"),
-        contentAlignment = Alignment.Center
     ) {
         // Outer Arc Canvas (clean single-color M3 gauge) - all rings share same center/radius
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -405,7 +438,7 @@ private fun ActiveTimerView(
                     Spacer(modifier = Modifier.width(2.dp))
                     Icon(
                         imageVector = Icons.Filled.SkipNext,
-                        contentDescription = "次のセクションへ",
+                        contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -447,13 +480,13 @@ private fun CompletedTimerView(
                 fontSize = 40.sp
             )
             Text(
-                text = "全セット達成！",
+                text = "全セット完了",
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.testTag("completed_title_text")
             )
             Text(
-                text = "全${totalSets}セット お疲れ様でした！",
+                text = "${totalSets}セット お疲れ様でした",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag("completed_subtitle_text")
@@ -490,10 +523,10 @@ private fun SetupTimerView(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceEvenly
     ) {
-        // Top: Loop / Set Stepper
+        // Top: Set Stepper
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "ループ",
+                text = "セット",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -585,7 +618,7 @@ private fun SetupTimerView(
         ) {
             Icon(
                 imageVector = Icons.Filled.PlayArrow,
-                contentDescription = "スタート",
+                contentDescription = "開始",
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(38.dp)
             )
@@ -596,11 +629,11 @@ private fun SetupTimerView(
     when (activeDialog) {
         EditDialogType.SETS -> {
             NumberInputDialog(
-                title = "ループ数",
+                title = "セット数",
                 initialValue = settings.totalSets,
                 minValue = 1,
                 maxValue = MAX_TOTAL_SETS,
-                unit = "回",
+                unit = "セット",
                 onConfirm = onUpdateTotalSets,
                 onDismiss = { activeDialog = EditDialogType.NONE }
             )
@@ -734,13 +767,9 @@ private fun NumberInputDialog(
     val focusRequester = remember { FocusRequester() }
     var isError by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-    }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "$title の入力") },
+        title = { Text(text = title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -766,18 +795,18 @@ private fun NumberInputDialog(
                     ),
                     suffix = if (unit.isNotEmpty()) { { Text(unit) } } else null,
                     isError = isError,
-                    supportingText = {
-                        if (isError) {
-                            Text("$minValue 〜 $maxValue の数値を入力してください")
-                        } else {
-                            Text("キーボードで直接入力できます")
-                        }
-                    },
+                    supportingText = { Text("$minValue〜$maxValue$unit") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(focusRequester)
                 )
+
+                // 入力欄が配置された後でフォーカスを要求する（ダイアログの外側で要求すると、
+                // 中身の構築より先に実行されて例外になることがある）
+                LaunchedEffect(Unit) {
+                    focusRequester.requestFocus()
+                }
             }
         },
         confirmButton = {
@@ -791,7 +820,7 @@ private fun NumberInputDialog(
                 },
                 enabled = !isError && textFieldValue.text.isNotEmpty()
             ) {
-                Text("確定")
+                Text("保存")
             }
         },
         dismissButton = {
@@ -813,12 +842,9 @@ fun StopwatchCircleDisplay(
     val trackColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val strokeColor = MaterialTheme.colorScheme.primary
 
-    Box(
+    CircleContainer(
+        testTag = "stopwatch_circle_container",
         modifier = modifier
-            .sizeIn(maxWidth = 310.dp, maxHeight = 310.dp)
-            .aspectRatio(1f)
-            .testTag("stopwatch_circle_container"),
-        contentAlignment = Alignment.Center
     ) {
         // Outer Arc Canvas - gauge stays strictly in initial state at all times per user request
         Canvas(modifier = Modifier.fillMaxSize()) {

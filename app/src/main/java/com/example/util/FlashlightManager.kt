@@ -1,7 +1,6 @@
 package com.example.util
 
 import android.content.Context
-import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.util.Log
@@ -10,27 +9,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class FlashlightManager(private val context: Context) {
+class FlashlightManager(context: Context) {
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
-    private var cameraIdWithFlash: String? = null
 
-    init {
-        try {
-            cameraManager?.cameraIdList?.forEach { id ->
-                val characteristics = cameraManager.getCameraCharacteristics(id)
-                val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
-                if (hasFlash && facing == CameraCharacteristics.LENS_FACING_BACK) {
-                    cameraIdWithFlash = id
-                    return@forEach
-                }
+    // カメラ情報の取得は重いため、最初の点滅時にバックグラウンドで一度だけ行う
+    private val cameraIdWithFlash: String? by lazy { findCameraIdWithFlash() }
+
+    private fun findCameraIdWithFlash(): String? {
+        val manager = cameraManager ?: return null
+        return try {
+            val idsWithFlash = manager.cameraIdList.filter { id ->
+                manager.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
             }
-            if (cameraIdWithFlash == null && cameraManager?.cameraIdList?.isNotEmpty() == true) {
-                cameraIdWithFlash = cameraManager.cameraIdList[0]
-            }
+            idsWithFlash.firstOrNull { id ->
+                manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) ==
+                    CameraCharacteristics.LENS_FACING_BACK
+            } ?: idsWithFlash.firstOrNull()
         } catch (e: Exception) {
             Log.e("FlashlightManager", "Failed to initialize camera flash", e)
+            null
         }
     }
 
@@ -38,10 +36,10 @@ class FlashlightManager(private val context: Context) {
      * Flashes flashlight `count` times with specified `delayMs`.
      */
     fun flash(count: Int = 6, delayMs: Long = 200L, scope: CoroutineScope) {
-        val camId = cameraIdWithFlash ?: return
         val manager = cameraManager ?: return
 
         scope.launch(Dispatchers.IO) {
+            val camId = cameraIdWithFlash ?: return@launch
             try {
                 repeat(count) {
                     try {
@@ -57,8 +55,6 @@ class FlashlightManager(private val context: Context) {
                     }
                     delay(delayMs)
                 }
-            } catch (e: Exception) {
-                Log.e("FlashlightManager", "Error during flashing loop", e)
             } finally {
                 try {
                     manager.setTorchMode(camId, false)

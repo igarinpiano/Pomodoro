@@ -3,13 +3,18 @@ package com.example.data
 import com.example.model.WorkSession
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
+import java.text.ParseException
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 class WorkSessionRepository(private val dao: WorkSessionDao) {
 
     val allSessions: Flow<List<WorkSession>> = dao.getAllSessions()
     val datesWithWork: Flow<List<String>> = dao.getDatesWithWork()
     val totalWorkSeconds: Flow<Long> = dao.getTotalWorkSeconds()
+    val dailyTotals: Flow<List<DailyWorkTotal>> = dao.getDailyTotals()
 
     fun getSessionsForDate(date: String): Flow<List<WorkSession>> {
         return dao.getSessionsForDate(date)
@@ -32,16 +37,16 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
     }
 
     suspend fun setWorkDurationForDate(date: String, durationSeconds: Long) {
-        dao.deleteSessionsForDate(date)
-        if (durationSeconds > 0) {
-            dao.insert(
-                WorkSession(
-                    date = date,
-                    startTimeMillis = System.currentTimeMillis(),
-                    durationSeconds = durationSeconds.toInt()
-                )
+        val session = if (durationSeconds > 0) {
+            WorkSession(
+                date = date,
+                startTimeMillis = System.currentTimeMillis(),
+                durationSeconds = durationSeconds.toSafeInt()
             )
+        } else {
+            null
         }
+        dao.replaceSessionsForDate(date, session)
     }
 
     suspend fun getAllSessionsSnapshot(): List<WorkSession> {
@@ -88,7 +93,8 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
      */
     suspend fun importFromJson(jsonString: String, clearExisting: Boolean = false): Result<Int> {
         return runCatching {
-            val trimmed = jsonString.trim()
+            // ファイルから読み込んだ場合に付くことがある BOM を取り除く
+            val trimmed = jsonString.removePrefix("\uFEFF").trim()
             val jsonArray = if (trimmed.startsWith("[")) {
                 JSONArray(trimmed)
             } else {
@@ -109,13 +115,14 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
                 val duration = obj.optLong("durationSeconds", 0L).let {
                     if (it == 0L) obj.optLong("seconds", 0L) else it
                 }
-                if (date.isNotBlank() && duration > 0) {
+                // カレンダーに表示できない日付の記録が合計にだけ混ざらないよう、形式を確認する
+                if (isValidDate(date) && duration > 0) {
                     importedDaily[date] = (importedDaily[date] ?: 0L) + duration
                 }
             }
 
-            if (clearExisting) {
-                dao.clearAll()
+            if (importedDaily.isEmpty()) {
+                throw IllegalArgumentException("有効な作業データが見つかりませんでした")
             }
 
             val listToInsert = importedDaily.map { (date, duration) ->
@@ -123,22 +130,34 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
                     id = 0,
                     date = date,
                     startTimeMillis = System.currentTimeMillis(),
-                    durationSeconds = duration.toInt()
+                    durationSeconds = duration.toSafeInt()
                 )
             }
 
-            if (listToInsert.isNotEmpty()) {
-                if (!clearExisting) {
-                    for (entry in listToInsert) {
-                        dao.deleteSessionsForDate(entry.date)
-                        dao.insert(entry)
-                    }
-                } else {
-                    dao.insertAll(listToInsert)
-                }
-            }
+            dao.replaceSessions(listToInsert, clearExisting)
 
             listToInsert.size
+        }.recoverCatching { error ->
+            throw if (error is JSONException) {
+                IllegalArgumentException("JSONの形式が正しくありません", error)
+            } else {
+                error
+            }
         }
+    }
+
+    private fun isValidDate(date: String): Boolean {
+        if (!DATE_PATTERN.matches(date)) return false
+        return try {
+            SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }.parse(date) != null
+        } catch (_: ParseException) {
+            false
+        }
+    }
+
+    private fun Long.toSafeInt(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+
+    private companion object {
+        val DATE_PATTERN = Regex("""\d{4}-\d{2}-\d{2}""")
     }
 }

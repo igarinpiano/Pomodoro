@@ -58,7 +58,7 @@ fun SettingsSheet(
             // Theme Mode Selector
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "テーマ設定",
+                    text = "テーマ",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -90,9 +90,9 @@ fun SettingsSheet(
 
             HorizontalDivider()
 
-            // Auto Start Settings Section
+            // Phase transition settings section
             Text(
-                text = "タイマーの自動開始",
+                text = "作業と休憩の切り替え",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
@@ -100,7 +100,7 @@ fun SettingsSheet(
             SettingToggleRow(
                 icon = { Icon(Icons.Filled.Coffee, contentDescription = null) },
                 title = "休憩の自動開始",
-                subtitle = "作業終了後に自動で休憩を開始",
+                subtitle = "作業が終わると休憩を開始",
                 checked = autoStartBreak,
                 onCheckedChange = { autoStartBreak = it },
                 testTag = "auto_start_break_toggle"
@@ -109,7 +109,7 @@ fun SettingsSheet(
             SettingToggleRow(
                 icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
                 title = "作業の自動開始",
-                subtitle = "休憩終了後に自動で作業を開始",
+                subtitle = "休憩が終わると次の作業を開始",
                 checked = autoStartWork,
                 onCheckedChange = { autoStartWork = it },
                 testTag = "auto_start_work_toggle"
@@ -117,8 +117,8 @@ fun SettingsSheet(
 
             SettingToggleRow(
                 icon = { Icon(Icons.Filled.HourglassTop, contentDescription = null) },
-                title = "手動切り替えまで作業継続",
-                subtitle = "作業終了後も手動切替まで計測継続",
+                title = "作業の継続",
+                subtitle = "時間を過ぎても「次へ」を押すまで計測",
                 checked = continueWorkUntilManual,
                 onCheckedChange = { continueWorkUntilManual = it },
                 testTag = "continue_work_until_manual_toggle"
@@ -126,8 +126,8 @@ fun SettingsSheet(
 
             SettingToggleRow(
                 icon = { Icon(Icons.Filled.Coffee, contentDescription = null) },
-                title = "手動切り替えまで休憩継続",
-                subtitle = "休憩終了後も手動切替まで計測継続",
+                title = "休憩の継続",
+                subtitle = "時間を過ぎても「次へ」を押すまで計測",
                 checked = continueBreakUntilManual,
                 onCheckedChange = { continueBreakUntilManual = it },
                 testTag = "continue_break_until_manual_toggle"
@@ -154,7 +154,7 @@ fun SettingsSheet(
                     .height(50.dp)
                     .testTag("save_settings_button")
             ) {
-                Text("設定を保存", fontWeight = FontWeight.Bold)
+                Text("保存", fontWeight = FontWeight.Bold)
             }
         }
     }

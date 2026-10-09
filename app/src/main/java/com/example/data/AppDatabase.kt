@@ -1,6 +1,7 @@
 package com.example.data
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -16,6 +17,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
+                INSTANCE?.let { return it }
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
@@ -23,6 +25,14 @@ abstract class AppDatabase : RoomDatabase() {
                 ).fallbackToDestructiveMigration().build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        @VisibleForTesting
+        internal fun resetForTest() {
+            synchronized(this) {
+                INSTANCE?.close()
+                INSTANCE = null
             }
         }
     }
