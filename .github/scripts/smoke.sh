@@ -91,8 +91,9 @@ measure() {
   note "MEASURE $1: frames_in_10s=$frames cpu_ticks_in_10s=$((j2 - j1)) app_window_lines=$windows popup_window_lines=$popups"
 }
 
-# 起動直後のエミュレータが落ち着くのを待つ
-sleep 20
+# 起動直後のエミュレータが落ち着くのを待つ。システム側アプリの「応答なし」ダイアログは操作の邪魔になるので出さない
+adb shell settings put global hide_error_dialogs 1
+sleep 45
 adb install -r "$APK"
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
 adb logcat -c

@@ -38,9 +38,12 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
-          target: google_apis
+          # Google Play 開発者サービス入りのイメージは起動直後の負荷が高く、操作が空振りしやすいので AOSP 版を使う
+          target: default
           arch: x86_64
           profile: pixel_6
+          cores: 3
+          ram-size: 4096M
           disable-animations: true
           script: bash .github/scripts/smoke.sh
 
