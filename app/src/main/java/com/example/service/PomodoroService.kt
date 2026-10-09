@@ -533,13 +533,17 @@ class PomodoroService : Service() {
             manager.createNotificationChannel(liveChannel)
 
             // 2. イベント通知チャンネル（高重要度: Heads-up ポップアップバナー通知・自動消去）
+            // 音とバイブはアプリ内のサウンド／バイブ設定に従ってアプリ側で鳴らすため、チャンネル自体は無音にする。
+            // 作成済みチャンネルの音設定は変更できないので、旧チャンネルは削除して作り直す
+            manager.deleteNotificationChannel(LEGACY_CHANNEL_EVENT_ID)
             val eventChannel = NotificationChannel(
                 CHANNEL_EVENT_ID,
                 "作業・休憩の切り替え",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "作業や休憩の開始・終了を通知します"
-                enableVibration(true)
+                setSound(null, null)
+                enableVibration(false)
                 setShowBadge(true)
             }
             manager.createNotificationChannel(eventChannel)
@@ -559,7 +563,8 @@ class PomodoroService : Service() {
             .setContentIntent(contentIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            // Android 7 以前は音かバイブの指定がないとポップアップ表示されないため、空のパターンを指定する
+            .setVibrate(longArrayOf(0L))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
         val manager = NotificationManagerCompat.from(this)
@@ -726,7 +731,8 @@ class PomodoroService : Service() {
 
     companion object {
         const val CHANNEL_LIVE_ID = "pomodoro_timer_live_channel"
-        const val CHANNEL_EVENT_ID = "pomodoro_events_channel"
+        const val CHANNEL_EVENT_ID = "pomodoro_events_silent_channel"
+        private const val LEGACY_CHANNEL_EVENT_ID = "pomodoro_events_channel"
         const val NOTIFICATION_ID = 1001
         const val EVENT_NOTIFICATION_ID = 2001
         private const val ALARM_REQ_CODE = 9999

@@ -95,19 +95,6 @@ private fun MainTimerView(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ -> }
 
-    // Dynamic camera permission for LED flash notification
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        )
-    }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasCameraPermission = isGranted
-    }
-
     LaunchedEffect(Unit) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -136,12 +123,7 @@ private fun MainTimerView(
             if (timerMode == TimerMode.POMODORO) {
                 TimerCircleDisplay(
                     timerState = timerState,
-                    onStart = {
-                        if (timerState.settings.flashEnabled && !hasCameraPermission) {
-                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
-                        viewModel.startTimer(context)
-                    },
+                    onStart = { viewModel.startTimer(context) },
                     onPause = { viewModel.pauseTimer(context) },
                     onResume = { viewModel.resumeTimer(context) },
                     onSkip = { viewModel.skipSet(context) },

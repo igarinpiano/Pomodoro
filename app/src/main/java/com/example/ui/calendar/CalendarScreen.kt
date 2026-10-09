@@ -930,7 +930,8 @@ fun CalendarScreen(
                         val h = hStr.toLongOrNull() ?: 0L
                         val m = mStr.toLongOrNull() ?: 0L
                         val s = sStr.toLongOrNull() ?: 0L
-                        val totalSecs = (h * 3600L + m * 60L + s).coerceAtLeast(0L)
+                        // 1日の作業時間は24時間までに丸める
+                        val totalSecs = (h * 3600L + m * 60L + s).coerceIn(0L, 24 * 3600L)
                         viewModel.updateWorkTimeForDate(selectedDate, totalSecs)
                         Toast.makeText(context, "保存しました", Toast.LENGTH_SHORT).show()
                         showEditTimeDialog = false

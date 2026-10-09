@@ -38,7 +38,9 @@ class PomodoroViewModel(application: Application) : AndroidViewModel(application
     private val todayString: String
         get() = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
-    private val _selectedDate = MutableStateFlow(todayString)
+    private var lastKnownToday = todayString
+
+    private val _selectedDate = MutableStateFlow(lastKnownToday)
     val selectedDate: StateFlow<String> = _selectedDate.asStateFlow()
 
     private val _statsPeriod = MutableStateFlow(StatsPeriod.WEEK)
@@ -74,6 +76,16 @@ class PomodoroViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun navigateTo(screen: AppScreen) {
+        if (screen == AppScreen.CALENDAR) {
+            // アプリを開いたまま日付が変わった場合に、選択が前日のまま残らないようにする
+            val today = todayString
+            if (today != lastKnownToday) {
+                if (_selectedDate.value == lastKnownToday) {
+                    _selectedDate.value = today
+                }
+                lastKnownToday = today
+            }
+        }
         _currentScreen.value = screen
         _selectedBarIndex.value = null
     }
