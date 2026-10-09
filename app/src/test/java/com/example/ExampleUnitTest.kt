@@ -21,6 +21,19 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun testOvertimeFormatting() {
+        val overtime = PomodoroTimerState(
+            totalDurationSeconds = 25 * 60,
+            timeLeftSeconds = 0,
+            overtimeSeconds = 65
+        )
+        assertEquals("+01:05", overtime.formattedOvertime)
+        // 超過中の時計表示は、フェーズ開始からの経過時間
+        assertEquals("26:05", overtime.formattedTime)
+        assertEquals(1f, overtime.progress, 0.001f)
+    }
+
+    @Test
     fun testProgressCalculation() {
         val workState = PomodoroTimerState(
             phase = PomodoroPhase.WORK,
