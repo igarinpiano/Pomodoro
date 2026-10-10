@@ -540,10 +540,9 @@ internal fun computeStatsData(
 
     return when (period) {
         StatsPeriod.WEEK -> {
-            // Adjust calendar to requested week
-            cal.add(Calendar.WEEK_OF_YEAR, offset)
-            cal.firstDayOfWeek = Calendar.SUNDAY
-            cal.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+            // 直前の日曜まで戻してから週単位でずらす。端末の地域設定（週の始まりが月曜の地域など）や
+            // Calendar の内部状態に左右されないよう、週番号のフィールドは使わない
+            cal.add(Calendar.DAY_OF_YEAR, -(cal.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY) + offset * 7)
 
             val weekDateFormat = SimpleDateFormat("yyyy/MM/dd", Locale.US)
             val dayKeyFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
