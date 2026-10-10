@@ -12,8 +12,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 最小対応の Android 7.0 から、通知・アラーム・サービスの制限が変わった節目のバージョンまで
-        api-level: [24, 28, 31, 34]
+        # 通知・アラーム・サービスの制限が変わった節目のバージョン。
+        # Android 7.x（API 24/25）のイメージは現在のエミュレータで起動が完了しないため、
+        # 最小対応バージョンの確認は単体テスト（Robolectric の SDK 24）で行う
+        api-level: [26, 28, 31, 34]
 
     steps:
       - name: Checkout Code

@@ -25,8 +25,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowSystemClock
 import java.time.Duration
 
+// 最小対応の Android 7.0（通知チャンネルなし）と、制限が増えた新しいバージョンの両方で確認する
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [24, 28, 34])
 class PomodoroServiceTest {
 
   private lateinit var context: Context
