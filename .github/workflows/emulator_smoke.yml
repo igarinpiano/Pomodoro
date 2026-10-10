@@ -62,7 +62,19 @@ jobs:
           ram-size: ${{ matrix.ram-size }}
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated
-          script: bash .github/scripts/smoke.sh
+          # 先に端末上のテスト（ファイルの書き出し／読み込みなど）を実行し、続けてリリース APK を操作する
+          script: |
+            ./gradlew connectedDebugAndroidTest --stacktrace
+            bash .github/scripts/smoke.sh
+
+      - name: Upload instrumented test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: instrumented-test-report-api${{ matrix.api-level }}
+          path: app/build/reports/androidTests/connected
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload smoke test output
         if: always()

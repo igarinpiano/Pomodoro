@@ -138,6 +138,9 @@ count_torch_on() {
   pid=$(adb shell pidof "$PKG" </dev/null | tr -d '\r')
   adb shell dumpsys media.camera 2>/dev/null </dev/null | tr -d '\r' | grep -ci "torch.*turned on.*PID $pid\b"
 }
+device_time() { adb shell "date +'%m-%d %H:%M:%S.000'" </dev/null | tr -d '\r'; }
+# 指定時刻以降に MP3 デコーダが起動した回数（アラート音 alert.mp3 の再生。古い Android では再生の履歴が残らないため）
+mp3_decodes_since() { adb logcat -d -t "$1" 2>/dev/null </dev/null | grep -ci "mp3.decoder"; }
 save_alert_dumps() { # save_alert_dumps <suffix>
   adb shell dumpsys audio > "$OUT/audio_$1.txt" 2>/dev/null
   { adb shell dumpsys vibrator_manager 2>/dev/null; adb shell dumpsys vibrator 2>/dev/null; } > "$OUT/vibrator_$1.txt"
@@ -166,6 +169,7 @@ adb root >/dev/null 2>&1
 sleep 3
 adb wait-for-device
 IS_ROOT=$(adb shell id -u | tr -d '\r')
+adb uninstall "$PKG" >/dev/null 2>&1   # 端末上のテスト（デバッグ版）が残っていれば消す
 adb install -r "$APK"
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
 API=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
@@ -193,6 +197,7 @@ set_number "4" "1"
 shot 03_sets_1
 tap "ライト切り替え"   # サウンド・バイブ（初期値オン）に加えてライトもオンにする
 PLAYERS_BEFORE=$(count_players); VIBRATIONS_BEFORE=$(count_vibrations); TORCH_BEFORE=$(count_torch_on)
+ALERT_SINCE=$(device_time)
 tap "開始"
 sleep 4
 shot 04_running
@@ -213,11 +218,13 @@ shot 05_home_after_complete
 # フェーズ終了時に、サウンド・バイブ・ライトが実際に要求されたこと
 save_alert_dumps "alerts_on"
 PLAYERS_AFTER=$(count_players); VIBRATIONS_AFTER=$(count_vibrations); TORCH_AFTER=$(count_torch_on)
-note "INFO alerts on: players $PLAYERS_BEFORE->$PLAYERS_AFTER vibrations $VIBRATIONS_BEFORE->$VIBRATIONS_AFTER torch_on $TORCH_BEFORE->$TORCH_AFTER"
-if grep -q "new player" "$OUT/audio_alerts_on.txt"; then
-  check "alert sound was played at the end of the phase" test "$PLAYERS_AFTER" -gt "$PLAYERS_BEFORE"
+MP3_DECODES=$(mp3_decodes_since "$ALERT_SINCE")
+note "INFO alerts on: players $PLAYERS_BEFORE->$PLAYERS_AFTER mp3_decodes=$MP3_DECODES vibrations $VIBRATIONS_BEFORE->$VIBRATIONS_AFTER torch_on $TORCH_BEFORE->$TORCH_AFTER"
+if [ "$PLAYERS_AFTER" -gt "$PLAYERS_BEFORE" ] || [ "$MP3_DECODES" -gt 0 ]; then
+  note "OK   alert sound was played at the end of the phase"
 else
-  note "SKIP this Android version does not log audio players"
+  note "FAIL alert sound was played at the end of the phase"
+  FAILED=1
 fi
 if grep -qi "previous" "$OUT/vibrator_alerts_on.txt"; then
   check "vibration was requested at the end of the phase" test "$VIBRATIONS_AFTER" -gt "$VIBRATIONS_BEFORE"
@@ -227,7 +234,7 @@ fi
 if grep -qi "torch for camera" "$OUT/camera_alerts_on.txt"; then
   check "the light was flashed at the end of the phase (without the camera permission)" test "$TORCH_AFTER" -gt "$TORCH_BEFORE"
 else
-  note "SKIP this emulator image has no flash unit or does not log torch use (see camera_alerts_on.txt)"
+  note "N/A  this emulator image has no flash unit, so there is nothing to flash (see camera_alerts_on.txt)"
 fi
 if [ "$API" -ge 26 ]; then
   check "the phase notification channel is silent" grep -Eq "pomodoro_events_silent_channel.*mSound=null" "$OUT/notif_completed.txt"
@@ -276,14 +283,16 @@ tap "バイブ切り替え"
 tap "ライト切り替え"
 shot 10b_alerts_off
 PLAYERS_BEFORE=$(count_players); VIBRATIONS_BEFORE=$(count_vibrations)
+ALERT_SINCE=$(device_time)
 tap "開始"
 sleep 66
 shot 11_break_running
 check "break phase started automatically" has "休憩中"
 save_alert_dumps "alerts_off"
 PLAYERS_AFTER=$(count_players); VIBRATIONS_AFTER=$(count_vibrations)
-note "INFO alerts off: players $PLAYERS_BEFORE->$PLAYERS_AFTER vibrations $VIBRATIONS_BEFORE->$VIBRATIONS_AFTER"
-check "no sound is played when sound is off" test "$PLAYERS_AFTER" = "$PLAYERS_BEFORE"
+MP3_DECODES=$(mp3_decodes_since "$ALERT_SINCE")
+note "INFO alerts off: players $PLAYERS_BEFORE->$PLAYERS_AFTER mp3_decodes=$MP3_DECODES vibrations $VIBRATIONS_BEFORE->$VIBRATIONS_AFTER"
+check "no sound is played when sound is off" test "$PLAYERS_AFTER" = "$PLAYERS_BEFORE" -a "$MP3_DECODES" = "0"
 if [ "$API" -ge 26 ]; then
   check "no vibration when vibration is off (including the notification)" test "$VIBRATIONS_AFTER" = "$VIBRATIONS_BEFORE"
 fi
