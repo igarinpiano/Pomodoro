@@ -12,24 +12,12 @@ data class DailyWorkTotal(
 
 @Dao
 interface WorkSessionDao {
-    @Query("SELECT * FROM work_sessions ORDER BY startTimeMillis DESC")
-    fun getAllSessions(): Flow<List<WorkSession>>
-
-    @Query("SELECT * FROM work_sessions WHERE date = :date ORDER BY startTimeMillis ASC")
-    fun getSessionsForDate(date: String): Flow<List<WorkSession>>
-
-    @Query("SELECT * FROM work_sessions WHERE date BETWEEN :startDate AND :endDate ORDER BY date ASC")
-    fun getSessionsBetweenDates(startDate: String, endDate: String): Flow<List<WorkSession>>
-
-    @Query("SELECT DISTINCT date FROM work_sessions WHERE durationSeconds > 0")
-    fun getDatesWithWork(): Flow<List<String>>
-
-    @Query("SELECT COALESCE(SUM(durationSeconds), 0) FROM work_sessions")
-    fun getTotalWorkSeconds(): Flow<Long>
-
     // 画面側で全セッションを読み込んで集計しなくて済むよう、日別の合計はDBで求める
     @Query("SELECT date, SUM(durationSeconds) AS totalSeconds FROM work_sessions GROUP BY date ORDER BY date ASC")
     fun getDailyTotals(): Flow<List<DailyWorkTotal>>
+
+    @Query("SELECT date, SUM(durationSeconds) AS totalSeconds FROM work_sessions GROUP BY date ORDER BY date ASC")
+    suspend fun getDailyTotalsSnapshot(): List<DailyWorkTotal>
 
     @Query("SELECT * FROM work_sessions")
     suspend fun getAllSessionsSnapshot(): List<WorkSession>

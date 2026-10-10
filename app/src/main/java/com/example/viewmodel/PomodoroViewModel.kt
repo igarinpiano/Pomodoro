@@ -11,6 +11,7 @@ import com.example.data.AppDatabase
 import com.example.data.WorkSessionRepository
 import com.example.model.*
 import com.example.service.PomodoroService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -70,6 +71,9 @@ class PomodoroViewModel(application: Application) : AndroidViewModel(application
     val workSecondsForSelectedDate: StateFlow<Long> = dailyWorkSeconds
         .combine(_selectedDate) { totals, date -> totals[date] ?: 0L }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    // 通知の許可は起動ごとに1回だけ尋ねる（画面を行き来するたびに出さない）
+    var hasRequestedNotificationPermission = false
 
     fun initSettings(context: Context) {
         PomodoroService.initSettingsIfNeeded(context)
@@ -205,10 +209,11 @@ class PomodoroViewModel(application: Application) : AndroidViewModel(application
     suspend fun exportDataToFile(uri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val json = repository.exportToJson()
-            val stream = getApplication<Application>().contentResolver.openOutputStream(uri)
+            // 既存のファイルに上書きする場合に古い内容の末尾が残らないよう、切り詰めて開く
+            val stream = getApplication<Application>().contentResolver.openOutputStream(uri, "wt")
                 ?: throw IOException("ファイルを開けませんでした")
             stream.use { it.write(json.toByteArray(Charsets.UTF_8)) }
-        }
+        }.onFailure { if (it is CancellationException) throw it }
     }
 
     suspend fun importDataFromFile(uri: Uri): Result<Int> {
@@ -230,7 +235,7 @@ class PomodoroViewModel(application: Application) : AndroidViewModel(application
                     }
                     content.toString()
                 }
-            }
+            }.onFailure { if (it is CancellationException) throw it }
         }
         return text.fold(
             onSuccess = { repository.importFromJson(it) },

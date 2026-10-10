@@ -168,7 +168,8 @@ class ScreenshotTest {
     composeTestRule.setContent {
       PomodoroTheme(themeMode = AppThemeMode.LIGHT, dynamicColor = false) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-          Box(contentAlignment = Alignment.Center) {
+          // 円を縮小表示している状態から開いても、ダイアログは通常の大きさで表示される
+          Box(modifier = Modifier.size(240.dp), contentAlignment = Alignment.Center) {
             TimerCircleDisplay(
               timerState = PomodoroTimerState(),
               onStart = {},

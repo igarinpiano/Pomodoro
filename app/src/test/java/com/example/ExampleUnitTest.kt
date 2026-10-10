@@ -31,6 +31,48 @@ class ExampleUnitTest {
         // 超過中の時計表示は、フェーズ開始からの経過時間
         assertEquals("26:05", overtime.formattedTime)
         assertEquals(1f, overtime.progress, 0.001f)
+
+        // 休憩のゲージは満杯から空へ減るので、超過中も空のまま
+        val breakOvertime = overtime.copy(phase = PomodoroPhase.BREAK)
+        assertEquals(0f, breakOvertime.progress, 0.001f)
+    }
+
+    private val tokyo = java.util.TimeZone.getTimeZone("Asia/Tokyo")
+
+    private fun tokyoMillis(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =
+        java.util.Calendar.getInstance(tokyo).apply {
+            clear()
+            set(year, month - 1, day, hour, minute, 0)
+        }.timeInMillis
+
+    @Test
+    fun testSplitByDayWithinOneDay() {
+        val slices = com.example.model.splitByDay(tokyoMillis(2026, 10, 10, 12, 0), 25 * 60, tokyo)
+        assertEquals(listOf("2026-10-10" to 25 * 60), slices.map { it.date to it.durationSeconds })
+        assertEquals(tokyoMillis(2026, 10, 10, 11, 35), slices.single().startTimeMillis)
+    }
+
+    @Test
+    fun testSplitByDayAcrossMidnight() {
+        // 22:00 に始めて 0:10 に終えた 2時間10分
+        val slices = com.example.model.splitByDay(tokyoMillis(2026, 10, 11, 0, 10), 2 * 3600 + 600, tokyo)
+        assertEquals(
+            listOf("2026-10-10" to 2 * 3600, "2026-10-11" to 600),
+            slices.map { it.date to it.durationSeconds }
+        )
+
+        // 2回またぐ場合（26時間）
+        val long = com.example.model.splitByDay(tokyoMillis(2026, 10, 12, 1, 0), 26 * 3600, tokyo)
+        assertEquals(
+            listOf("2026-10-10" to 3600, "2026-10-11" to 24 * 3600, "2026-10-12" to 3600),
+            long.map { it.date to it.durationSeconds }
+        )
+
+        // 端数があっても合計は元の秒数と一致する
+        val odd = com.example.model.splitByDay(tokyoMillis(2026, 10, 11, 0, 0) + 1_499L, 3, tokyo)
+        assertEquals(3, odd.sumOf { it.durationSeconds })
+
+        assertTrue(com.example.model.splitByDay(tokyoMillis(2026, 10, 10, 12, 0), 0, tokyo).isEmpty())
     }
 
     @Test

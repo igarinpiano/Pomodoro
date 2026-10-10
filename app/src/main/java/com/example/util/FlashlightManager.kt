@@ -13,8 +13,13 @@ class FlashlightManager(context: Context) {
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
 
-    // カメラ情報の取得は重いため、最初の点滅時にバックグラウンドで一度だけ行う
-    private val cameraIdWithFlash: String? by lazy { findCameraIdWithFlash() }
+    // カメラ情報の取得は重いため、最初の点滅時にバックグラウンドで行い、見つかった ID だけを覚えておく
+    // （一時的な失敗を覚えてしまうと、以後ずっと点滅しなくなるため）
+    @Volatile
+    private var cachedCameraIdWithFlash: String? = null
+
+    private val cameraIdWithFlash: String?
+        get() = cachedCameraIdWithFlash ?: findCameraIdWithFlash()?.also { cachedCameraIdWithFlash = it }
 
     private fun findCameraIdWithFlash(): String? {
         val manager = cameraManager ?: return null

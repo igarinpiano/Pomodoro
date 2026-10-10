@@ -37,6 +37,9 @@ class PomodoroServiceTest {
   private val timerState get() = PomodoroService.timerState.value
   private val stopwatchState get() = PomodoroService.stopwatchState.value
 
+  // 日付をまたぐ時刻に実行されると1件の計測が2日分に分かれるため、件数ではなく合計で確認する
+  private val recordedSeconds get() = recorded.sumOf { it.durationSeconds }
+
   @Before
   fun setUp() {
     context = ApplicationProvider.getApplicationContext()
@@ -104,8 +107,8 @@ class PomodoroServiceTest {
 
     assertEquals(PomodoroPhase.BREAK, timerState.phase)
     assertTrue(timerState.isRunning)
-    assertEquals(listOf(25 * 60), recorded.map { it.durationSeconds })
-    assertEquals(PomodoroService.SESSION_TYPE_POMODORO, recorded.single().sessionType)
+    assertEquals(25 * 60, recordedSeconds)
+    assertEquals(PomodoroService.SESSION_TYPE_POMODORO, recorded.first().sessionType)
   }
 
   @Test
@@ -119,7 +122,7 @@ class PomodoroServiceTest {
 
     assertEquals(PomodoroPhase.BREAK, timerState.phase)
     assertEquals(1, timerState.currentSet)
-    assertEquals(1, recorded.size)
+    assertEquals(25 * 60, recordedSeconds)
   }
 
   @Test
@@ -131,7 +134,7 @@ class PomodoroServiceTest {
 
     assertEquals(PomodoroPhase.BREAK, timerState.phase)
     assertEquals(5 * 60, timerState.timeLeftSeconds)
-    assertEquals(listOf(25 * 60), recorded.map { it.durationSeconds })
+    assertEquals(25 * 60, recordedSeconds)
   }
 
   @Test
@@ -173,7 +176,7 @@ class PomodoroServiceTest {
     sleepFor(Duration.ofSeconds(90))
     send(PomodoroService.ACTION_STOP)
 
-    assertEquals(listOf(90), recorded.map { it.durationSeconds })
+    assertEquals(90, recordedSeconds)
     assertFalse(timerState.isRunning)
     assertFalse(timerState.isPaused)
     assertEquals(PomodoroPhase.WORK, timerState.phase)
@@ -211,7 +214,7 @@ class PomodoroServiceTest {
 
     send(PomodoroService.ACTION_STOP)
     assertEquals(PomodoroPhase.WORK, timerState.phase)
-    assertEquals(listOf(25 * 60), recorded.map { it.durationSeconds })
+    assertEquals(25 * 60, recordedSeconds)
     assertTrue(shadowOf(controller.get()).isStoppedBySelf)
   }
 
@@ -230,7 +233,7 @@ class PomodoroServiceTest {
     send(PomodoroService.ACTION_NEXT_PHASE)
     assertEquals(PomodoroPhase.BREAK, timerState.phase)
     assertEquals(0, timerState.overtimeSeconds)
-    assertEquals(listOf(25 * 60 + 5), recorded.map { it.durationSeconds })
+    assertEquals(25 * 60 + 5, recordedSeconds)
   }
 
   @Test
@@ -242,7 +245,7 @@ class PomodoroServiceTest {
     send(PomodoroService.ACTION_SKIP)
     assertEquals(PomodoroPhase.BREAK, timerState.phase)
     assertTrue(timerState.isPaused)
-    assertEquals(listOf(30), recorded.map { it.durationSeconds })
+    assertEquals(30, recordedSeconds)
 
     send(PomodoroService.ACTION_SKIP)
     assertEquals(PomodoroPhase.WORK, timerState.phase)
@@ -251,7 +254,7 @@ class PomodoroServiceTest {
 
     send(PomodoroService.ACTION_SKIP)
     assertEquals(PomodoroPhase.COMPLETED, timerState.phase)
-    assertEquals(1, recorded.size)
+    assertEquals(30, recordedSeconds)
   }
 
   @Test
@@ -272,8 +275,8 @@ class PomodoroServiceTest {
     sleepFor(Duration.ofSeconds(10))
     send(PomodoroService.ACTION_STOPWATCH_STOP)
 
-    assertEquals(listOf(75), recorded.map { it.durationSeconds })
-    assertEquals(PomodoroService.SESSION_TYPE_STOPWATCH, recorded.single().sessionType)
+    assertEquals(75, recordedSeconds)
+    assertEquals(PomodoroService.SESSION_TYPE_STOPWATCH, recorded.first().sessionType)
     assertEquals(0, stopwatchState.elapsedSeconds)
     assertFalse(stopwatchState.isRunning)
     assertTrue(shadowOf(controller.get()).isStoppedBySelf)

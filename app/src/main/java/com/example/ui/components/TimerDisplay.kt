@@ -51,6 +51,9 @@ private enum class EditDialogType { NONE, SETS, WORK, BREAK }
 
 private val CIRCLE_DESIGN_SIZE = 310.dp
 
+// 円の縮小前の密度。円の中から開くダイアログまで縮小されないよう、ダイアログ側で元に戻すために使う
+private val LocalUnscaledDensity = staticCompositionLocalOf<Density?> { null }
+
 /**
  * 円の中身は 310dp を基準にレイアウトしているため、それより狭い場合（横向き・分割画面・小型端末）は
  * 中身ごと等倍で縮小し、ボタンや文字がはみ出さないようにする。
@@ -73,7 +76,10 @@ private fun CircleContainer(
         val scaledDensity = remember(density, scale) {
             Density(density.density * scale, density.fontScale)
         }
-        CompositionLocalProvider(LocalDensity provides scaledDensity) {
+        CompositionLocalProvider(
+            LocalDensity provides scaledDensity,
+            LocalUnscaledDensity provides density
+        ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
@@ -767,68 +773,70 @@ private fun NumberInputDialog(
     val focusRequester = remember { FocusRequester() }
     var isError by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = textFieldValue,
-                    onValueChange = { input ->
-                        val digits = input.text.filter { it.isDigit() }
-                        textFieldValue = input.copy(text = digits)
-                        val num = digits.toIntOrNull()
-                        isError = num == null || num !in minValue..maxValue
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            val num = textFieldValue.text.toIntOrNull()
-                            if (num != null && num in minValue..maxValue) {
-                                onConfirm(num)
-                                onDismiss()
+    CompositionLocalProvider(LocalDensity provides (LocalUnscaledDensity.current ?: LocalDensity.current)) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(text = title) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = textFieldValue,
+                        onValueChange = { input ->
+                            val digits = input.text.filter { it.isDigit() }
+                            textFieldValue = input.copy(text = digits)
+                            val num = digits.toIntOrNull()
+                            isError = num == null || num !in minValue..maxValue
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                val num = textFieldValue.text.toIntOrNull()
+                                if (num != null && num in minValue..maxValue) {
+                                    onConfirm(num)
+                                    onDismiss()
+                                }
                             }
-                        }
-                    ),
-                    suffix = if (unit.isNotEmpty()) { { Text(unit) } } else null,
-                    isError = isError,
-                    supportingText = { Text("$minValue〜$maxValue$unit") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester)
-                )
+                        ),
+                        suffix = if (unit.isNotEmpty()) { { Text(unit) } } else null,
+                        isError = isError,
+                        supportingText = { Text("$minValue〜$maxValue$unit") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                    )
 
-                // 入力欄が配置された後でフォーカスを要求する（ダイアログの外側で要求すると、
-                // 中身の構築より先に実行されて例外になることがある）
-                LaunchedEffect(Unit) {
-                    focusRequester.requestFocus()
+                    // 入力欄が配置された後でフォーカスを要求する（ダイアログの外側で要求すると、
+                    // 中身の構築より先に実行されて例外になることがある）
+                    LaunchedEffect(Unit) {
+                        focusRequester.requestFocus()
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val num = textFieldValue.text.toIntOrNull()
+                        if (num != null && num in minValue..maxValue) {
+                            onConfirm(num)
+                            onDismiss()
+                        }
+                    },
+                    enabled = !isError && textFieldValue.text.isNotEmpty()
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("キャンセル")
                 }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val num = textFieldValue.text.toIntOrNull()
-                    if (num != null && num in minValue..maxValue) {
-                        onConfirm(num)
-                        onDismiss()
-                    }
-                },
-                enabled = !isError && textFieldValue.text.isNotEmpty()
-            ) {
-                Text("保存")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("キャンセル")
-            }
-        }
-    )
+        )
+    }
 }
 
 @Composable

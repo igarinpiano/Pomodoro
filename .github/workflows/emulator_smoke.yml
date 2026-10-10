@@ -6,9 +6,14 @@ on:
 
 jobs:
   smoke:
-    name: Release APK on emulator
+    name: Release APK on emulator (API ${{ matrix.api-level }})
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # 最小対応の Android 7.0 から、通知・アラーム・サービスの制限が変わった節目のバージョンまで
+        api-level: [24, 28, 31, 34]
 
     steps:
       - name: Checkout Code
@@ -37,7 +42,7 @@ jobs:
       - name: Run smoke test on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ matrix.api-level }}
           # Google Play 開発者サービス入りのイメージは起動直後の負荷が高く、操作が空振りしやすいので AOSP 版を使う
           target: default
           arch: x86_64
@@ -45,13 +50,14 @@ jobs:
           cores: 3
           ram-size: 4096M
           disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated
           script: bash .github/scripts/smoke.sh
 
       - name: Upload smoke test output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-smoke
+          name: emulator-smoke-api${{ matrix.api-level }}
           path: smoke-out
           if-no-files-found: ignore
           retention-days: 14

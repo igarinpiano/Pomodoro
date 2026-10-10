@@ -1,6 +1,7 @@
 package com.example.data
 
 import com.example.model.WorkSession
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
 import org.json.JSONException
@@ -11,18 +12,7 @@ import java.util.Locale
 
 class WorkSessionRepository(private val dao: WorkSessionDao) {
 
-    val allSessions: Flow<List<WorkSession>> = dao.getAllSessions()
-    val datesWithWork: Flow<List<String>> = dao.getDatesWithWork()
-    val totalWorkSeconds: Flow<Long> = dao.getTotalWorkSeconds()
     val dailyTotals: Flow<List<DailyWorkTotal>> = dao.getDailyTotals()
-
-    fun getSessionsForDate(date: String): Flow<List<WorkSession>> {
-        return dao.getSessionsForDate(date)
-    }
-
-    fun getSessionsBetweenDates(startDate: String, endDate: String): Flow<List<WorkSession>> {
-        return dao.getSessionsBetweenDates(startDate, endDate)
-    }
 
     suspend fun insertSession(session: WorkSession): Long {
         return dao.insert(session)
@@ -57,15 +47,8 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
      * JSON形式に日付ごとの作業時間をエクスポートする
      */
     suspend fun exportToJson(): String {
-        val sessions = dao.getAllSessionsSnapshot()
-        // 日付ごとに合計作業時間を集計
-        val dailyMap = sortedMapOf<String, Long>()
-        for (session in sessions) {
-            dailyMap[session.date] = (dailyMap[session.date] ?: 0L) + session.durationSeconds
-        }
-
         val jsonArray = JSONArray()
-        for ((date, seconds) in dailyMap) {
+        for ((date, seconds) in dao.getDailyTotalsSnapshot()) {
             if (seconds > 0) {
                 val obj = JSONObject().apply {
                     put("date", date)
@@ -138,12 +121,12 @@ class WorkSessionRepository(private val dao: WorkSessionDao) {
 
             listToInsert.size
         }.recoverCatching { error ->
-            throw if (error is JSONException) {
-                IllegalArgumentException("JSONの形式が正しくありません", error)
-            } else {
-                error
+            throw when (error) {
+                is CancellationException -> error
+                is JSONException -> IllegalArgumentException("JSONの形式が正しくありません", error)
+                else -> error
             }
-        }
+        }.onFailure { if (it is CancellationException) throw it }
     }
 
     private fun isValidDate(date: String): Boolean {

@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -22,6 +23,7 @@ import com.example.model.PomodoroSettings
 import com.example.model.PomodoroTimerState
 import com.example.model.StopwatchState
 import com.example.model.WorkSession
+import com.example.model.splitByDay
 import com.example.util.FlashlightManager
 import com.example.util.PreferencesManager
 import com.example.util.SoundManager
@@ -29,8 +31,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import kotlin.time.Duration.Companion.seconds
 
@@ -216,21 +216,19 @@ class PomodoroService : Service() {
     private fun countsOvertime(state: PomodoroTimerState): Boolean =
         isOvertimeMode(state) || state.overtimeSeconds > 0
 
-    private fun recordSession(
-        durationSecs: Int,
-        sessionType: String,
-        startTimeMillis: Long = System.currentTimeMillis() - (durationSecs * 1000L)
-    ) {
-        if (durationSecs <= 0) return
-        sessionRecorder(
-            applicationContext,
-            WorkSession(
-                date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
-                startTimeMillis = startTimeMillis,
-                durationSeconds = durationSecs,
-                sessionType = sessionType
+    private fun recordSession(durationSecs: Int, sessionType: String) {
+        // 日付をまたいだ計測は、0時で分けてそれぞれの日に記録する
+        splitByDay(System.currentTimeMillis(), durationSecs).forEach { slice ->
+            sessionRecorder(
+                applicationContext,
+                WorkSession(
+                    date = slice.date,
+                    startTimeMillis = slice.startTimeMillis,
+                    durationSeconds = slice.durationSeconds,
+                    sessionType = sessionType
+                )
             )
-        )
+        }
     }
 
     // --- Stopwatch Functions ---
@@ -272,12 +270,7 @@ class PomodoroService : Service() {
         dismissEventNotification()
         stopwatchJob?.cancel()
         val duration = if (current.isRunning) stopwatchElapsedSeconds() else current.elapsedSeconds
-        recordSession(
-            durationSecs = duration,
-            sessionType = SESSION_TYPE_STOPWATCH,
-            startTimeMillis = current.startTimestampMillis.takeIf { it > 0L }
-                ?: (System.currentTimeMillis() - (duration * 1000L))
-        )
+        recordSession(duration, SESSION_TYPE_STOPWATCH)
         _stopwatchState.value = StopwatchState()
         updateNotification()
     }
@@ -773,7 +766,14 @@ class PomodoroService : Service() {
         @VisibleForTesting
         internal var sessionRecorder: (Context, WorkSession) -> Unit = { context, session ->
             persistenceScope.launch {
-                AppDatabase.getInstance(context).workSessionDao().insert(session)
+                try {
+                    AppDatabase.getInstance(context).workSessionDao().insert(session)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 保存に失敗しても（空き容量不足など）タイマー自体は止めない
+                    Log.e("PomodoroService", "Failed to record the session", e)
+                }
             }
         }
 

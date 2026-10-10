@@ -41,7 +41,8 @@ data class PomodoroTimerState(
     val progress: Float
         get() {
             if (totalDurationSeconds <= 0) return 0f
-            if (overtimeSeconds > 0) return 1f
+            // 超過中は「使い切った」状態を保つ（作業は満杯、休憩は空のまま）
+            if (overtimeSeconds > 0) return if (phase == PomodoroPhase.BREAK) 0f else 1f
             val elapsed = (totalDurationSeconds - timeLeftSeconds).coerceAtLeast(0)
             return when (phase) {
                 PomodoroPhase.WORK -> (elapsed.toFloat() / totalDurationSeconds.toFloat()).coerceIn(0f, 1f)

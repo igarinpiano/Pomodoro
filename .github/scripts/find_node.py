@@ -1,8 +1,9 @@
 """Print the tap position of a UI node whose text or content-desc matches.
 
-Usage: find_node.py <ui.xml> <label>
+Usage: find_node.py <ui.xml> <label> [--bounds]
   "~label"   substring match
   "label#2"  second matching node (1-based)
+  --bounds   print "x1 y1 x2 y2" instead of the centre
 """
 import re
 import sys
@@ -24,6 +25,9 @@ for node in ET.parse(path).iter("node"):
         found += 1
         if found == index:
             x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
-            print((x1 + x2) // 2, (y1 + y2) // 2)
+            if "--bounds" in sys.argv[3:]:
+                print(x1, y1, x2, y2)
+            else:
+                print((x1 + x2) // 2, (y1 + y2) // 2)
             sys.exit(0)
 sys.exit(1)
