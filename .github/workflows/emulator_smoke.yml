@@ -27,6 +27,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # KSP（Room のコード生成）は終了時にまれに無害な例外を出力することがある（ビルド結果には影響しない）。
+      # setup-java の検出ルールがそれをエラーの注釈として表示してしまうので、ルールを外しておく
+      - name: Disable Java problem matcher
+        run: echo "::remove-matcher owner=java::"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
