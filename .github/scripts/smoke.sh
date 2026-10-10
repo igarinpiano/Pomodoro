@@ -9,6 +9,10 @@ mkdir -p "$OUT"
 APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
 FAILED=0
 
+# エミュレータの不調で adb が応答しなくなっても全体が止まらないよう、すべての adb 呼び出しに時間制限を付ける
+ADB_BIN=$(command -v adb)
+adb() { timeout 90 "$ADB_BIN" "$@"; }
+
 note() { echo "== $*" | tee -a "$OUT/summary.txt"; }
 check() { # check <description> <command...>
   local desc=$1; shift
@@ -95,9 +99,14 @@ confirm_save_in_picker() {
   if try_tap "Show roots"; then
     try_tap "Downloads"
     sleep 2
-    for label in "SAVE" "Save" "保存"; do
-      try_tap "$label" && sleep 3 && has "カレンダー" && return 0
-    done
+    # 古い保存画面では、保存先を選ぶとファイル名の入力欄にキーボードが出て保存ボタンが隠れ、
+    # 入力欄のカーソルが点滅し続けるため画面の内容も取得できない。
+    # Enter でキーボードを閉じ、右下にある保存ボタンを位置で押す
+    adb shell input keyevent KEYCODE_ENTER
+    sleep 3
+    adb shell input tap "$((SCREEN_W * 9 / 10))" "$((SCREEN_H * 963 / 1000))"
+    sleep 4
+    has "カレンダー" && return 0
   fi
   return 1
 }
@@ -320,11 +329,17 @@ notifications > "$OUT/notif_doze.txt"
 check "phase switched while the screen was off and the device was in Doze" grep -q "休憩中 \[1/2\]" "$OUT/notif_doze.txt"
 adb shell dumpsys alarm > "$OUT/alarm_after_doze.txt"
 note "INFO alarm stats: $(grep -m1 "ALARM_COMPLETE" "$OUT/alarm_after_doze.txt" | tr -s ' ' | cut -c1-160)"
+# 古い Android では、この状態で端末が実際にスリープして adb の応答が止まることがある。
+# 電源につないだ状態に戻して起こすところまでを、応答するまで繰り返す
+for _ in 1 2 3 4 5 6 7 8; do
+  timeout 20 "$ADB_BIN" shell dumpsys battery reset >/dev/null 2>&1 &&
+    timeout 20 "$ADB_BIN" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 && break
+  sleep 3
+done
 adb shell dumpsys deviceidle unforce >/dev/null 2>&1
-adb shell dumpsys battery reset
-adb shell input keyevent KEYCODE_WAKEUP
 adb shell wm dismiss-keyguard >/dev/null 2>&1
 adb shell input keyevent 82
+adb shell input swipe "$((SCREEN_W / 2))" "$((SCREEN_H * 8 / 10))" "$((SCREEN_W / 2))" "$((SCREEN_H * 2 / 10))" 300
 sleep 2
 adb shell am start -W -n "$ACTIVITY"
 sleep 4
