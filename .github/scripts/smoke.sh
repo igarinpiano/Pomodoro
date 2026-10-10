@@ -43,9 +43,13 @@ has() { # 画面の切り替わり直後は取りこぼすことがあるので�
 }
 tap() {
   local pos=""
-  for _ in 1 2 3 4; do   # 画面の切り替わり直後は取りこぼすことがあるので、少し待って取り直す
+  for attempt in 1 2 3 4 5; do   # 画面の切り替わり直後は取りこぼすことがあるので、少し待って取り直す
     dump_ui && pos=$(python3 .github/scripts/find_node.py "$OUT/ui.xml" "$1") && break
     pos=""
+    if [ "$attempt" -ge 3 ]; then
+      # 小さい画面では目的の要素が画面の下に隠れていることがあるので、少しスクロールして探す
+      adb shell input swipe "$((SCREEN_W / 2))" "$((SCREEN_H * 7 / 10))" "$((SCREEN_W / 2))" "$((SCREEN_H * 4 / 10))" 400
+    fi
     sleep 1.5
   done
   if [ -z "$pos" ]; then
@@ -138,8 +142,9 @@ IS_ROOT=$(adb shell id -u | tr -d '\r')
 adb install -r "$APK"
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
 API=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
+read -r SCREEN_W SCREEN_H <<< "$(adb shell wm size | tr -d '\r' | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr 'x' ' ')"
 APP_UID=$(adb shell dumpsys package "$PKG" | tr -d '\r' | grep -m1 -oE "(userId|appId)=[0-9]+" | cut -d= -f2)
-note "INFO Android API $API, app uid $APP_UID, adb uid $IS_ROOT"
+note "INFO Android API $API, screen ${SCREEN_W}x${SCREEN_H}, app uid $APP_UID, adb uid $IS_ROOT"
 adb logcat -c
 adb shell am start -W -n "$ACTIVITY"
 sleep 8

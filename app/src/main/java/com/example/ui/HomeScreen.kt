@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -288,49 +289,60 @@ private fun ModeSelector(
     onSelectMode: (TimerMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(
-                if (isAnyTimerActive) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f)
-                else MaterialTheme.colorScheme.surfaceContainerHigh
-            )
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        TimerMode.entries.forEach { mode ->
-            val isSelected = timerMode == mode
-            val tabBackground = when {
-                isSelected && isAnyTimerActive -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f)
-                isSelected -> MaterialTheme.colorScheme.primaryContainer
-                else -> Color.Transparent
-            }
-            val textColor = when {
-                isAnyTimerActive && isSelected -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                isAnyTimerActive -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(tabBackground)
-                    .clickable(enabled = !isAnyTimerActive) {
-                        onSelectMode(mode)
-                    }
-                    .testTag("mode_tab_${mode.name.lowercase()}"),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = mode.label,
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                    ),
-                    color = textColor
+    BoxWithConstraints(modifier = modifier) {
+        // 幅の狭い画面では「ポモドーロタイマー」が折り返して欠けるので、文字を一段小さくして1行に収める
+        val labelStyle = if (maxWidth < 280.dp) {
+            MaterialTheme.typography.labelMedium
+        } else {
+            MaterialTheme.typography.labelLarge
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(
+                    if (isAnyTimerActive) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f)
+                    else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            TimerMode.entries.forEach { mode ->
+                val isSelected = timerMode == mode
+                val tabBackground = when {
+                    isSelected && isAnyTimerActive -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f)
+                    isSelected -> MaterialTheme.colorScheme.primaryContainer
+                    else -> Color.Transparent
+                }
+                val textColor = when {
+                    isAnyTimerActive && isSelected -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    isAnyTimerActive -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                    isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(tabBackground)
+                        .clickable(enabled = !isAnyTimerActive) {
+                            onSelectMode(mode)
+                        }
+                        .testTag("mode_tab_${mode.name.lowercase()}"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = mode.label,
+                        style = labelStyle.copy(
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        ),
+                        color = textColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }

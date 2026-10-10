@@ -200,6 +200,24 @@ class ScreenshotTest {
     composeTestRule.onNodeWithText("セット数").assertExists()
   }
 
+  // 幅 320dp の小さい端末でも、モード切り替えの文字が折り返さず、円や下部のボタンが収まること
+  @Test
+  @Config(qualifiers = "w320dp-h640dp-mdpi")
+  fun main_screen_on_small_phone() {
+    val viewModel = PomodoroViewModel(application)
+    viewModel.initSettings(application)
+    composeTestRule.setContent {
+      PomodoroTheme(themeMode = AppThemeMode.LIGHT, dynamicColor = false) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+          HomeScreen(viewModel = viewModel)
+        }
+      }
+    }
+    capture("small_01_main")
+    composeTestRule.onNodeWithTag("mode_tab_stopwatch").performClick()
+    capture("small_02_stopwatch")
+  }
+
   @Test
   fun all_screens_portrait() {
     walkThroughScreens("portrait", AppThemeMode.LIGHT)
