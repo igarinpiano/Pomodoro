@@ -13,8 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         # 最小対応の Android 7.0 から、通知・アラーム・サービスの制限が変わった節目のバージョンまで。
-        # Android 7.0 の 64bit イメージは現在のエミュレータで起動しないため、32bit イメージを使う。
-        # 7.0 のイメージは動作が遅く、時間内に終わらないことがある（その場合は 7.0 のジョブだけ再実行する）
+        # Android 7.0 の 64bit イメージは現在のエミュレータで起動しないため、32bit イメージを使う
         include:
           - { api-level: 24, arch: x86, profile: '', cores: 2, ram-size: '' }
           - { api-level: 26, arch: x86_64, profile: pixel_6, cores: 3, ram-size: 4096M }
