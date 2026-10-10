@@ -77,7 +77,8 @@ set_number() { # set_number <current value shown> <new value>
   tap "$1" && adb shell input text "$2" && sleep 1 && tap "保存"
 }
 notifications() { adb shell dumpsys notification --noredact; }
-in_picker() { has "Files in Downloads" || has "~Recent"; }
+in_picker() { has "Files in Downloads" || has "~Recent" || has "Show roots"; }
+ime_shown() { [[ "$(adb shell dumpsys input_method 2>/dev/null </dev/null)" == *"mInputShown=true"* ]]; }
 # どの画面にいてもカレンダー画面に戻す（ファイル選択画面などから戻れなかった場合の立て直し）
 ensure_calendar() {
   for _ in 1 2 3 4; do
@@ -99,14 +100,16 @@ confirm_save_in_picker() {
   if try_tap "Show roots"; then
     try_tap "Downloads"
     sleep 2
-    # 古い保存画面では、保存先を選ぶとファイル名の入力欄にキーボードが出て保存ボタンが隠れ、
-    # 入力欄のカーソルが点滅し続けるため画面の内容も取得できない。
-    # Enter でキーボードを閉じ、右下にある保存ボタンを位置で押す
-    adb shell input keyevent KEYCODE_ENTER
-    sleep 3
-    adb shell input tap "$((SCREEN_W * 9 / 10))" "$((SCREEN_H * 963 / 1000))"
-    sleep 4
-    has "カレンダー" && return 0
+    # 古い保存画面では、保存先を選んだあともキーボードが出たままで保存ボタンが隠れることがある。
+    # キーボードが出ているときだけ「戻る」で閉じる（出ていないときに押すと保存画面ごと閉じてしまう）
+    if ime_shown; then
+      adb shell input keyevent KEYCODE_BACK
+      sleep 2
+      has "Show roots" || return 1
+    fi
+    for label in "SAVE" "Save" "保存"; do
+      try_tap "$label" && sleep 3 && has "カレンダー" && return 0
+    done
   fi
   return 1
 }
@@ -119,6 +122,12 @@ pick_exported_file() {
   dump_ui || return 1
   local pos x y
   # 1つ目に見つかるのはプレビューボタンなので、2つ目（ファイル名）を使う
+  if ! grep -q "pomodoro_" "$OUT/ui.xml"; then
+    # 古い Android は「最近」の画面から始まるので、保存先のフォルダーへ移動する
+    try_tap "Show roots" && try_tap "Downloads" || return 1
+    sleep 2
+    dump_ui || return 1
+  fi
   pos=$(python3 .github/scripts/find_node.py "$OUT/ui.xml" "~pomodoro_#2") ||
     pos=$(python3 .github/scripts/find_node.py "$OUT/ui.xml" "~pomodoro_") || return 1
   read -r x y <<< "$pos"
