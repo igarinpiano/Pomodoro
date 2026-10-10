@@ -107,8 +107,11 @@ confirm_save_in_picker() {
       sleep 2
       has "Show roots" || return 1
     fi
-    for label in "SAVE" "Save" "保存"; do
-      try_tap "$label" && sleep 3 && has "カレンダー" && return 0
+    # 保存先を選んだ直後は、保存ボタンの1回目のタップが効かないことがあるので押し直す
+    for _ in 1 2 3; do
+      for label in "SAVE" "Save" "保存"; do
+        try_tap "$label" && sleep 3 && has "カレンダー" && return 0
+      done
     done
   fi
   return 1
