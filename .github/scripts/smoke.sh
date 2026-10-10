@@ -42,9 +42,19 @@ has() { # 画面の切り替わり直後は取りこぼすことがあるので�
   return 1
 }
 tap() {
-  dump_ui || { note "FAIL ui dump before tapping '$1'"; FAILED=1; return 1; }
-  local pos
-  pos=$(python3 .github/scripts/find_node.py "$OUT/ui.xml" "$1") || { note "FAIL node not found: '$1'"; cp "$OUT/ui.xml" "$OUT/notfound_$(date +%s).xml"; FAILED=1; return 1; }
+  local pos=""
+  for _ in 1 2 3 4; do   # 画面の切り替わり直後は取りこぼすことがあるので、少し待って取り直す
+    dump_ui && pos=$(python3 .github/scripts/find_node.py "$OUT/ui.xml" "$1") && break
+    pos=""
+    sleep 1.5
+  done
+  if [ -z "$pos" ]; then
+    note "FAIL node not found: '$1'"
+    cp "$OUT/ui.xml" "$OUT/notfound_$(date +%s).xml" 2>/dev/null
+    shot "notfound_$(date +%s)"
+    FAILED=1
+    return 1
+  fi
   adb shell input tap $pos
   sleep 2
 }
@@ -88,7 +98,11 @@ count_players() { adb shell dumpsys audio 2>/dev/null | tr -d '\r' | grep -E "ne
 # アプリ（またはアプリの通知）が要求したバイブの回数
 count_vibrations() { { adb shell dumpsys vibrator_manager 2>/dev/null; adb shell dumpsys vibrator 2>/dev/null; } | tr -d '\r' | grep -c "$PKG"; }
 # アプリがライト（トーチ）を点灯させた回数
-count_torch_on() { adb shell dumpsys media.camera 2>/dev/null | tr -d '\r' | grep -ci "torch.*turned on.*PID $(adb shell pidof "$PKG" | tr -d '\r')\b"; }
+count_torch_on() {
+  local pid
+  pid=$(adb shell pidof "$PKG" </dev/null | tr -d '\r')
+  adb shell dumpsys media.camera 2>/dev/null </dev/null | tr -d '\r' | grep -ci "torch.*turned on.*PID $pid\b"
+}
 save_alert_dumps() { # save_alert_dumps <suffix>
   adb shell dumpsys audio > "$OUT/audio_$1.txt" 2>/dev/null
   { adb shell dumpsys vibrator_manager 2>/dev/null; adb shell dumpsys vibrator 2>/dev/null; } > "$OUT/vibrator_$1.txt"
