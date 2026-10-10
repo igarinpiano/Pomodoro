@@ -169,18 +169,21 @@ class ScreenshotTest {
       PomodoroTheme(themeMode = AppThemeMode.LIGHT, dynamicColor = false) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
           // 円を縮小表示している状態から開いても、ダイアログは通常の大きさで表示される
-          Box(modifier = Modifier.size(240.dp), contentAlignment = Alignment.Center) {
-            TimerCircleDisplay(
-              timerState = PomodoroTimerState(),
-              onStart = {},
-              onPause = {},
-              onResume = {},
-              onSkip = {},
-              onStop = {},
-              onUpdateWorkMins = {},
-              onUpdateBreakMins = {},
-              onUpdateTotalSets = {}
-            )
+          // （Surface は最小サイズを子に伝えるので、サイズ指定は一段内側の Box で行う）
+          Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.size(240.dp), contentAlignment = Alignment.Center) {
+              TimerCircleDisplay(
+                timerState = PomodoroTimerState(),
+                onStart = {},
+                onPause = {},
+                onResume = {},
+                onSkip = {},
+                onStop = {},
+                onUpdateWorkMins = {},
+                onUpdateBreakMins = {},
+                onUpdateTotalSets = {}
+              )
+            }
           }
         }
       }

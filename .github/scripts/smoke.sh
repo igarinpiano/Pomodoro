@@ -34,7 +34,13 @@ dump_ui() {
   done
   return 0
 }
-has() { dump_ui && python3 .github/scripts/find_node.py "$OUT/ui.xml" "$1" >/dev/null; }
+has() { # 画面の切り替わり直後は取りこぼすことがあるので、少し待って数回確かめる
+  for _ in 1 2 3; do
+    dump_ui && python3 .github/scripts/find_node.py "$OUT/ui.xml" "$1" >/dev/null && return 0
+    sleep 1
+  done
+  return 1
+}
 tap() {
   dump_ui || { note "FAIL ui dump before tapping '$1'"; FAILED=1; return 1; }
   local pos
@@ -59,7 +65,8 @@ pick_exported_file() {
   dump_ui || return 1
   local pos x y
   # 1つ目に見つかるのはプレビューボタンなので、2つ目（ファイル名）を使う
-  pos=$(python3 .github/scripts/find_node.py "$OUT/ui.xml" "~pomodoro_#2") || return 1
+  pos=$(python3 .github/scripts/find_node.py "$OUT/ui.xml" "~pomodoro_#2") ||
+    pos=$(python3 .github/scripts/find_node.py "$OUT/ui.xml" "~pomodoro_") || return 1
   read -r x y <<< "$pos"
   adb shell input swipe "$x" "$y" "$x" "$y" 120; sleep 3
   in_picker || { note "INFO picked the file by tapping its name"; return 0; }
@@ -81,7 +88,7 @@ count_players() { adb shell dumpsys audio 2>/dev/null | tr -d '\r' | grep -E "ne
 # アプリ（またはアプリの通知）が要求したバイブの回数
 count_vibrations() { { adb shell dumpsys vibrator_manager 2>/dev/null; adb shell dumpsys vibrator 2>/dev/null; } | tr -d '\r' | grep -c "$PKG"; }
 # アプリがライト（トーチ）を点灯させた回数
-count_torch_on() { adb shell dumpsys media.camera 2>/dev/null | tr -d '\r' | grep -i "torch" | grep -i "on" | grep -c "$APP_UID"; }
+count_torch_on() { adb shell dumpsys media.camera 2>/dev/null | tr -d '\r' | grep -ci "torch.*turned on.*PID $(adb shell pidof "$PKG" | tr -d '\r')\b"; }
 save_alert_dumps() { # save_alert_dumps <suffix>
   adb shell dumpsys audio > "$OUT/audio_$1.txt" 2>/dev/null
   { adb shell dumpsys vibrator_manager 2>/dev/null; adb shell dumpsys vibrator 2>/dev/null; } > "$OUT/vibrator_$1.txt"
@@ -108,7 +115,7 @@ sleep 45
 adb install -r "$APK"
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
 API=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
-APP_UID=$(adb shell dumpsys package "$PKG" | tr -d '\r' | grep -m1 -oE "userId=[0-9]+" | cut -d= -f2)
+APP_UID=$(adb shell dumpsys package "$PKG" | tr -d '\r' | grep -m1 -oE "(userId|appId)=[0-9]+" | cut -d= -f2)
 note "INFO Android API $API, app uid $APP_UID"
 adb logcat -c
 adb shell am start -W -n "$ACTIVITY"
@@ -162,10 +169,10 @@ if grep -qi "previous" "$OUT/vibrator_alerts_on.txt"; then
 else
   note "SKIP this Android version does not log past vibrations"
 fi
-if grep -qi "torch" "$OUT/camera_alerts_on.txt" && [ "$TORCH_AFTER" -gt "$TORCH_BEFORE" ]; then
-  note "OK   the light was flashed at the end of the phase"
+if grep -qi "torch for camera" "$OUT/camera_alerts_on.txt"; then
+  check "the light was flashed at the end of the phase (without the camera permission)" test "$TORCH_AFTER" -gt "$TORCH_BEFORE"
 else
-  note "SKIP torch activity is not visible on this emulator (see camera_alerts_on.txt)"
+  note "SKIP this emulator image has no flash unit or does not log torch use (see camera_alerts_on.txt)"
 fi
 if [ "$API" -ge 26 ]; then
   check "the phase notification channel is silent" grep -Eq "pomodoro_events_silent_channel.*mSound=null" "$OUT/notif_completed.txt"
@@ -230,9 +237,12 @@ sleep 3
 adb shell dumpsys battery unplug
 adb shell input keyevent KEYCODE_SLEEP
 sleep 3
-adb shell dumpsys deviceidle force-idle > "$OUT/deviceidle.txt" 2>&1
-note "INFO device idle state: $(adb shell dumpsys deviceidle get deep 2>/dev/null | tr -d '\r') (screen off, on battery)"
+adb shell dumpsys deviceidle enable > "$OUT/deviceidle.txt" 2>&1
+adb shell dumpsys deviceidle force-idle >> "$OUT/deviceidle.txt" 2>&1
+DOZE_STATE=$(adb shell dumpsys deviceidle get deep 2>/dev/null | tr -d '\r')
+check "the device entered Doze (screen off, on battery)" test "$DOZE_STATE" = "IDLE"
 sleep 66
+note "INFO device idle state at the end of the phase: $(adb shell dumpsys deviceidle get deep 2>/dev/null | tr -d '\r')"
 notifications > "$OUT/notif_doze.txt"
 check "phase switched while the screen was off and the device was in Doze" grep -q "休憩中 \[1/2\]" "$OUT/notif_doze.txt"
 adb shell dumpsys alarm > "$OUT/alarm_after_doze.txt"
@@ -309,6 +319,8 @@ if try_tap "SAVE" || try_tap "Save" || try_tap "保存"; then
   else
     note "SKIP could not pick the exported file in the system picker"
     adb shell input keyevent KEYCODE_BACK
+    sleep 2
+    try_tap "キャンセル"
   fi
 else
   note "SKIP could not confirm the save dialog of the system picker"
@@ -320,11 +332,14 @@ adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton >/
 sleep 5
 adb shell am start -W -n "$ACTIVITY"
 sleep 3
-has "設定" || adb shell input keyevent KEYCODE_BACK   # カレンダーにいる場合はホームへ戻る
-sleep 2
+for _ in 1 2 3; do   # カレンダーやダイアログにいる場合はホームまで戻る
+  has "設定" && break
+  adb shell input keyevent KEYCODE_BACK
+  sleep 2
+done
 shot 30_main_3button
 adb shell dumpsys window windows > "$OUT/windows_3button.txt"
-NAV_TOP=$(tr -d '\r' < "$OUT/windows_3button.txt" | grep -A30 "Window{.*NavigationBar" | grep -m1 -oE "[fF]rame=\[[0-9]+,[0-9]+\]" | sed -E 's/.*,([0-9]+)\]/\1/')
+NAV_TOP=$(python3 .github/scripts/nav_top.py "$OUT/windows_3button.txt")
 BUTTON_BOTTOM=""
 dump_ui && BUTTON_BOTTOM=$(python3 .github/scripts/find_node.py "$OUT/ui.xml" "設定" --bounds | awk '{print $4}')
 note "INFO navigation bar top=$NAV_TOP, settings button bottom=$BUTTON_BOTTOM"
