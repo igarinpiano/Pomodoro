@@ -74,6 +74,33 @@ set_number() { # set_number <current value shown> <new value>
 }
 notifications() { adb shell dumpsys notification --noredact; }
 in_picker() { has "Files in Downloads" || has "~Recent"; }
+# どの画面にいてもカレンダー画面に戻す（ファイル選択画面などから戻れなかった場合の立て直し）
+ensure_calendar() {
+  for _ in 1 2 3 4; do
+    has "メニュー" && return 0
+    if has "設定"; then
+      try_tap "カレンダー・統計"
+    else
+      adb shell input keyevent KEYCODE_BACK
+    fi
+    sleep 2
+  done
+  has "メニュー"
+}
+# システムのファイル保存画面で保存を確定する。古い Android では保存先を選ぶまで保存できない
+confirm_save_in_picker() {
+  for label in "SAVE" "Save" "保存"; do
+    try_tap "$label" && sleep 3 && has "カレンダー" && return 0
+  done
+  if try_tap "Show roots"; then
+    try_tap "Downloads"
+    sleep 2
+    for label in "SAVE" "Save" "保存"; do
+      try_tap "$label" && sleep 3 && has "カレンダー" && return 0
+    done
+  fi
+  return 1
+}
 sleep_until() { local now; now=$(date +%s); [ "$1" -gt "$now" ] && sleep $(($1 - now)); return 0; }
 last_recorded_seconds() {
   adb shell "sqlite3 /data/data/$PKG/databases/pomodoro_timer.db 'select durationSeconds from work_sessions order by id desc limit 1'" 2>/dev/null | tr -d '\r'
@@ -352,12 +379,15 @@ shot 14_calendar_landscape
 check "app is alive after rotation" alive
 tap "グラフを見る"
 sleep 3
+has "カレンダーに戻る" || tap "グラフを見る"   # 回転直後でタップがずれた場合はやり直す
 shot 15_stats_landscape
+check "statistics screen is shown in landscape" has "カレンダーに戻る"
 adb shell settings put system user_rotation 0
 sleep 4
 shot 16_stats_portrait
-adb shell input keyevent KEYCODE_BACK
+tap "カレンダーに戻る"
 sleep 2
+check "back on the calendar screen" ensure_calendar
 
 # --- ダイアログを開いたまま放置しても、裏でアニメーションが回り続けないこと ---------
 measure "calendar idle"
@@ -377,10 +407,9 @@ shot 17_export_dialog
 tap "ファイルに保存"
 sleep 5
 shot 18_picker_save
-if try_tap "SAVE" || try_tap "Save" || try_tap "保存"; then
-  sleep 3
+if confirm_save_in_picker; then
   shot 19_after_save
-  check "back in the app after saving a file" has "カレンダー"
+  note "OK   back in the app after saving a file"
   tap "メニュー"
   tap "インポート"
   shot 20_import_dialog
@@ -400,9 +429,10 @@ if try_tap "SAVE" || try_tap "Save" || try_tap "保存"; then
     try_tap "キャンセル"
   fi
 else
+  shot 19_save_not_confirmed
   note "SKIP could not confirm the save dialog of the system picker"
-  adb shell input keyevent KEYCODE_BACK
 fi
+ensure_calendar
 
 # --- 3ボタンナビゲーションで、下部のボタンがナビゲーションバーに重ならないこと -----------
 adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton >/dev/null 2>&1
