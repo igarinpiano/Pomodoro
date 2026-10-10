@@ -70,6 +70,10 @@ set_number() { # set_number <current value shown> <new value>
 }
 notifications() { adb shell dumpsys notification --noredact; }
 in_picker() { has "Files in Downloads" || has "~Recent"; }
+sleep_until() { local now; now=$(date +%s); [ "$1" -gt "$now" ] && sleep $(($1 - now)); return 0; }
+last_recorded_seconds() {
+  adb shell "sqlite3 /data/data/$PKG/databases/pomodoro_timer.db 'select durationSeconds from work_sessions order by id desc limit 1'" 2>/dev/null | tr -d '\r'
+}
 # システムのファイル選択画面で、エクスポートしたファイルを開く（端末によって効く操作が違うため順に試す）
 pick_exported_file() {
   dump_ui || return 1
@@ -126,11 +130,16 @@ measure() {
 # 起動直後のエミュレータが落ち着くのを待つ。システム側アプリの「応答なし」ダイアログは操作の邪魔になるので出さない
 adb shell settings put global hide_error_dialogs 1
 sleep 45
+# プロセスの一時凍結と記録の直接確認に使う（AOSP 版のイメージでのみ root になれる）
+adb root >/dev/null 2>&1
+sleep 3
+adb wait-for-device
+IS_ROOT=$(adb shell id -u | tr -d '\r')
 adb install -r "$APK"
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
 API=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 APP_UID=$(adb shell dumpsys package "$PKG" | tr -d '\r' | grep -m1 -oE "(userId|appId)=[0-9]+" | cut -d= -f2)
-note "INFO Android API $API, app uid $APP_UID"
+note "INFO Android API $API, app uid $APP_UID, adb uid $IS_ROOT"
 adb logcat -c
 adb shell am start -W -n "$ACTIVITY"
 sleep 8
@@ -207,6 +216,15 @@ tap "ストップウォッチ"
 tap "開始"
 sleep 4
 shot 07_stopwatch_running
+if [ "$API" -le 30 ]; then
+  # Android 11 以前は「戻る」で画面が破棄される。計測を続けたまま開き直しても、ストップウォッチの画面に戻ること
+  adb shell input keyevent KEYCODE_BACK
+  sleep 3
+  adb shell am start -W -n "$ACTIVITY"
+  sleep 4
+  shot 07b_stopwatch_after_reopen
+  check "the stopwatch screen is shown again after the screen was recreated" has "計測中"
+fi
 tap "一時停止"
 shot 08_stopwatch_paused
 tap "停止して記録"
@@ -275,12 +293,52 @@ tap "停止"
 sleep 2
 check "setup screen after the Doze scenario" has "開始"
 
+# --- シナリオD: フェーズ終了をまたいでアプリのプロセスが止まっていた場合 -----------------
+# 端末のスリープで CPU が止まるのと同じく、ティッカーもアラームの受信も動かない状態を作る。
+# 再開時には「止まっていたティッカー」と「遅れて届くアラーム」の両方がフェーズ終了を処理しようとする
+WORK_MINUTES=3
+if [ "$IS_ROOT" = "0" ]; then
+  tap "開始"
+  T0=$(date +%s)
+  APP_PID=$(adb shell pidof "$PKG" | tr -d '\r')
+  sleep_until $((T0 + 48))
+  adb shell kill -STOP "$APP_PID"
+  note "INFO app process frozen about 50s into the 60s work phase"
+  sleep_until $((T0 + 64))
+  adb shell kill -CONT "$APP_PID"
+  sleep 8
+  notifications > "$OUT/notif_frozen.txt"
+  check "the break is running after the process was frozen across the phase end" grep -q "休憩中 \[1/2\]" "$OUT/notif_frozen.txt"
+  if grep -q "作業中 \[2/2\]" "$OUT/notif_frozen.txt"; then
+    note "FAIL the late alarm skipped the break"
+    FAILED=1
+  else
+    note "OK   the late alarm did not skip the break"
+  fi
+  LAST_SECONDS=$(last_recorded_seconds)
+  if [ -n "$LAST_SECONDS" ]; then
+    check "the full 60 seconds were recorded although the ticker was frozen (got $LAST_SECONDS)" test "$LAST_SECONDS" = "60"
+  else
+    note "SKIP sqlite3 is not available on this image, the recorded time is checked on the calendar instead"
+  fi
+  check "app is alive after being frozen" alive
+  adb shell am start -W -n "$ACTIVITY"
+  sleep 3
+  shot 12c_after_freeze
+  tap "停止"
+  sleep 2
+  check "setup screen after the freeze scenario" has "開始"
+  WORK_MINUTES=4
+else
+  note "SKIP cannot freeze the process on this image (adb is not root)"
+fi
+
 # --- 記録・カレンダー・統計・回転 ------------------------------------------------
 tap "カレンダー・統計"
 sleep 3
 shot 13_calendar
 dump_ui && cp "$OUT/ui.xml" "$OUT/calendar_ui.xml"
-check "today's work is recorded (3 work minutes + stopwatch)" grep -Eq '00:03:[0-9][0-9]' "$OUT/calendar_ui.xml"
+check "today's work is recorded ($WORK_MINUTES work minutes + stopwatch)" grep -Eq "00:0$WORK_MINUTES:[0-9][0-9]" "$OUT/calendar_ui.xml"
 
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1
@@ -329,7 +387,7 @@ if try_tap "SAVE" || try_tap "Save" || try_tap "保存"; then
     shot 22_after_import
     check "back in the app after importing a file" has "カレンダー"
     dump_ui && cp "$OUT/ui.xml" "$OUT/calendar_after_import_ui.xml"
-    check "records are intact after re-importing the exported file" grep -Eq '00:03:[0-9][0-9]' "$OUT/calendar_after_import_ui.xml"
+    check "records are intact after re-importing the exported file" grep -Eq "00:0$WORK_MINUTES:[0-9][0-9]" "$OUT/calendar_after_import_ui.xml"
   else
     note "SKIP could not pick the exported file in the system picker"
     adb shell input keyevent KEYCODE_BACK

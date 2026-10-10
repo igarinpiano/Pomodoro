@@ -12,10 +12,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 通知・アラーム・サービスの制限が変わった節目のバージョン。
-        # Android 7.x（API 24/25）のイメージは現在のエミュレータで起動が完了しないため、
-        # 最小対応バージョンの確認は単体テスト（Robolectric の SDK 24）で行う
-        api-level: [26, 28, 31, 34]
+        # 最小対応の Android 7.0 から、通知・アラーム・サービスの制限が変わった節目のバージョンまで。
+        # Android 7.0 の 64bit イメージは現在のエミュレータで起動しないため、32bit イメージを使う
+        include:
+          - { api-level: 24, arch: x86, profile: '', cores: 2, ram-size: '' }
+          - { api-level: 26, arch: x86_64, profile: pixel_6, cores: 3, ram-size: 4096M }
+          - { api-level: 28, arch: x86_64, profile: pixel_6, cores: 3, ram-size: 4096M }
+          - { api-level: 31, arch: x86_64, profile: pixel_6, cores: 3, ram-size: 4096M }
+          - { api-level: 34, arch: x86_64, profile: pixel_6, cores: 3, ram-size: 4096M }
 
     steps:
       - name: Checkout Code
@@ -52,10 +56,10 @@ jobs:
           api-level: ${{ matrix.api-level }}
           # Google Play 開発者サービス入りのイメージは起動直後の負荷が高く、操作が空振りしやすいので AOSP 版を使う
           target: default
-          arch: x86_64
-          profile: pixel_6
-          cores: 3
-          ram-size: 4096M
+          arch: ${{ matrix.arch }}
+          profile: ${{ matrix.profile }}
+          cores: ${{ matrix.cores }}
+          ram-size: ${{ matrix.ram-size }}
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated
           script: bash .github/scripts/smoke.sh

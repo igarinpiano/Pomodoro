@@ -32,7 +32,15 @@ class PomodoroViewModel(application: Application) : AndroidViewModel(application
     private val _currentScreen = MutableStateFlow(AppScreen.MAIN)
     val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
 
-    private val _timerMode = MutableStateFlow(TimerMode.POMODORO)
+    // 計測を続けたまま画面だけが作り直された場合（最近使ったアプリから消した後など）でも、
+    // 計測中のストップウォッチの画面に戻れるようにする
+    private val _timerMode = MutableStateFlow(
+        if (PomodoroService.stopwatchState.value.let { it.isRunning || it.isPaused || it.elapsedSeconds > 0 }) {
+            TimerMode.STOPWATCH
+        } else {
+            TimerMode.POMODORO
+        }
+    )
     val timerMode: StateFlow<TimerMode> = _timerMode.asStateFlow()
 
     // Calendar & Stats State

@@ -1,15 +1,19 @@
 package com.example
 
+import android.app.Application
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.AppDatabase
 import com.example.model.PomodoroPhase
 import com.example.model.PomodoroSettings
+import com.example.model.TimerMode
 import com.example.model.WorkSession
 import com.example.service.PomodoroService
+import com.example.viewmodel.PomodoroViewModel
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -53,6 +57,7 @@ class PomodoroServiceTest {
 
   @After
   fun tearDown() {
+    AppDatabase.resetForTest()
     controller.destroy()
     PomodoroService.sessionRecorder = originalRecorder
     PomodoroService.resetForTest()
@@ -79,6 +84,13 @@ class PomodoroServiceTest {
   /** ティッカーを動かさずに時間だけ進める（端末スリープ中に相当） */
   private fun sleepFor(duration: Duration) {
     ShadowSystemClock.advanceBy(duration)
+  }
+
+  private fun eventNotificationTitleAndText(): Pair<String, String> {
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    val extras = shadowOf(manager).getNotification(PomodoroService.EVENT_NOTIFICATION_ID).extras
+    return extras.getCharSequence(Notification.EXTRA_TITLE).toString() to
+      extras.getCharSequence(Notification.EXTRA_TEXT).toString()
   }
 
   private fun liveNotificationTitle(): String {
@@ -256,6 +268,51 @@ class PomodoroServiceTest {
     send(PomodoroService.ACTION_SKIP)
     assertEquals(PomodoroPhase.COMPLETED, timerState.phase)
     assertEquals(30, recordedSeconds)
+  }
+
+  @Test
+  fun `phase notification says what actually happened`() {
+    send(PomodoroService.ACTION_START)
+    runFor(Duration.ofSeconds(25 * 60 + 1))
+    assertEquals("休憩開始 [1/4]" to "残り 05:00", eventNotificationTitleAndText())
+    send(PomodoroService.ACTION_STOP)
+
+    // 自動開始しない設定では、始まっていない休憩を「開始」と通知しない
+    applySettings(PomodoroSettings(autoStartBreak = false))
+    send(PomodoroService.ACTION_START)
+    runFor(Duration.ofSeconds(25 * 60 + 1))
+    assertTrue(timerState.isPaused)
+    assertEquals("作業終了 [1/4]" to "休憩は開始待ちです", eventNotificationTitleAndText())
+  }
+
+  @Test
+  fun `timer and stopwatch never run at the same time`() {
+    send(PomodoroService.ACTION_STOPWATCH_START)
+    send(PomodoroService.ACTION_START)
+    assertFalse(timerState.isRunning)
+    assertTrue(stopwatchState.isRunning)
+    send(PomodoroService.ACTION_STOPWATCH_STOP)
+
+    send(PomodoroService.ACTION_START)
+    send(PomodoroService.ACTION_STOPWATCH_START)
+    assertTrue(timerState.isRunning)
+    assertFalse(stopwatchState.isRunning)
+  }
+
+  @Test
+  fun `a recreated screen opens on the stopwatch while it is measuring`() {
+    val application = ApplicationProvider.getApplicationContext<Application>()
+    assertEquals(TimerMode.POMODORO, PomodoroViewModel(application).timerMode.value)
+
+    send(PomodoroService.ACTION_STOPWATCH_START)
+    runFor(Duration.ofSeconds(5))
+    assertEquals(TimerMode.STOPWATCH, PomodoroViewModel(application).timerMode.value)
+
+    send(PomodoroService.ACTION_STOPWATCH_PAUSE)
+    assertEquals(TimerMode.STOPWATCH, PomodoroViewModel(application).timerMode.value)
+
+    send(PomodoroService.ACTION_STOPWATCH_STOP)
+    assertEquals(TimerMode.POMODORO, PomodoroViewModel(application).timerMode.value)
   }
 
   @Test

@@ -113,6 +113,8 @@ class PomodoroService : Service() {
     private fun startTimer() {
         val currentState = _timerState.value
         if (currentState.isActive) return
+        // 画面側でも防いでいるが、ストップウォッチと同時には計測しない
+        if (_stopwatchState.value.let { it.isRunning || it.isPaused }) return
 
         dismissEventNotification()
         hasAlertedForCurrentPhase = false
@@ -234,7 +236,7 @@ class PomodoroService : Service() {
     // --- Stopwatch Functions ---
     private fun startStopwatch() {
         val current = _stopwatchState.value
-        if (current.isRunning) return
+        if (current.isRunning || _timerState.value.isActive) return
 
         dismissEventNotification()
         val alreadyElapsed = current.elapsedSeconds
@@ -406,10 +408,13 @@ class PomodoroService : Service() {
                         autoStart = settings.autoStartBreak
                     )
                     if (!isSkip) {
-                        sendPhaseStartNotification(
-                            title = "休憩開始 [${state.currentSet}/${settings.totalSets}]",
-                            durationMins = settings.breakDurationMinutes
-                        )
+                        val setLabel = "[${state.currentSet}/${settings.totalSets}]"
+                        if (settings.autoStartBreak) {
+                            sendPhaseStartNotification("休憩開始 $setLabel", settings.breakDurationMinutes)
+                        } else {
+                            // 自動開始しない設定では、まだ始まっていない休憩を「開始」と通知しない
+                            sendPushEventNotification(title = "作業終了 $setLabel", message = "休憩は開始待ちです")
+                        }
                     }
                 }
             }
@@ -424,10 +429,14 @@ class PomodoroService : Service() {
                         autoStart = settings.autoStartWork
                     )
                     if (!isSkip) {
-                        sendPhaseStartNotification(
-                            title = "作業開始 [$nextSet/${settings.totalSets}]",
-                            durationMins = settings.workDurationMinutes
-                        )
+                        if (settings.autoStartWork) {
+                            sendPhaseStartNotification("作業開始 [$nextSet/${settings.totalSets}]", settings.workDurationMinutes)
+                        } else {
+                            sendPushEventNotification(
+                                title = "休憩終了 [${state.currentSet}/${settings.totalSets}]",
+                                message = "作業は開始待ちです"
+                            )
+                        }
                     }
                 } else {
                     completeAllSets(state, notify = !isSkip)

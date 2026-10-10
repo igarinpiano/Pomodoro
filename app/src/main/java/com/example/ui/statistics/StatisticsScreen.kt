@@ -517,25 +517,26 @@ private fun BarChartView(
 
 private fun formatAxisHours(hours: Long): String = String.format(Locale.US, "%02d:00", hours)
 
-private data class ChartBarItem(
+internal data class ChartBarItem(
     val shortLabel: String,
     val fullDateLabel: String,
     val seconds: Long
 )
 
-private data class PeriodStats(
+internal data class PeriodStats(
     val periodLabel: String,
     val totalSeconds: Long,
     val maxSeconds: Long,
     val items: List<ChartBarItem>
 )
 
-private fun computeStatsData(
+internal fun computeStatsData(
     dailyWorkSeconds: Map<String, Long>,
     period: StatsPeriod,
-    offset: Int
+    offset: Int,
+    now: Calendar = Calendar.getInstance()
 ): PeriodStats {
-    val cal = Calendar.getInstance()
+    val cal = now.clone() as Calendar
 
     return when (period) {
         StatsPeriod.WEEK -> {
